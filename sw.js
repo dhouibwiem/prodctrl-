@@ -1,6 +1,6 @@
-const CACHE_NAME = 'prodctrl-v40';
+const CACHE_NAME = 'prodctrl-v1773213827';
 const ASSETS = [
-  './manifest.json', './icon-192.png', './icon-512.png',
+  './manifest.json', './icône-192.png', './icône-512.png',
   'https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600&display=swap',
   'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
 ];
