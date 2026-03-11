@@ -1974,12 +1974,13 @@ function closeDay(){
       const debut  = stockStartOfDay[pk]?.[s.id] || 0;
       const transf = transfersOfDay[pk]?.[s.id]  || 0;
       const fin    = state[pk].stocks[s.id]?.qty  || 0;
-      // Qté restante dans malaxeurs pas encore vidés (vers stock en cours)
+      // Qté restante dans malaxeurs à l'étape "vers stock" uniquement
       let enCours = 0;
+      const vsIdxConso = versStockIdx(pk);
       for(const m of prod.malaxeurs){
         if(m.simple) continue;
         const ms2 = state[pk]?.malaxeurs[m.id];
-        if(ms2 && ms2.step >= 0 && ms2.step < videIdx(pk)) enCours += ms2.qty || 0;
+        if(ms2 && ms2.step === vsIdxConso) enCours += ms2.qty || 0;
       }
       conso[s.id] = { debut, transf, fin, enCours, consomme: debut + transf - fin - enCours };
     }
