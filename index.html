@@ -905,7 +905,7 @@ let transfersOfDay  = {};   // { pk: { stockId: qty } } cumul transferts du jour
 let state = {}, timers = {}, tickInterval = null;
 let neutreAlertMin = 60; // seuil en minutes (configurable)
 let _neutreAlerted = {}; // { malId: true } pour éviter répétition
-let dayPaused = false;
+let dayPaused = false; // état local atelier courant
 let _actFilter = 'all';
 let currentUser = '';   // prénom saisi au login
 let _presenceId = null; // clé Firebase de ma présence
@@ -956,8 +956,8 @@ function saveActivityLog(){
 
 function saveState(){
   if(!window._fbReady) return;
-  // Sanitize: remove undefined values for Firebase
   const clean = JSON.parse(JSON.stringify(state));
+  clean._dayPaused = dayPaused; // sauvegarder pause par atelier
   window._fbSet(FB_PATH+'/state', clean).catch(e=>console.warn('FB write err',e));
 }
 
@@ -1038,6 +1038,8 @@ function startFirebaseSync(){
     if(!remote){ saveState(); return; } // DB empty, push current state
     // Merge and apply
     state = mergeDefaults(remote);
+    // Restaurer dayPaused depuis Firebase
+    if(remote._dayPaused !== undefined) dayPaused = remote._dayPaused;
     // Si stockStartOfDay vide (1ère ouverture sans newDay), prendre snapshot maintenant
     for(const [pk,prod] of Object.entries(PRODUCTS)){
       if(!stockStartOfDay[pk]) stockStartOfDay[pk]={};
@@ -1987,7 +1989,7 @@ function closeDay(){
   saveHistory();
   // Marquer la journée en pause (flag local + Firebase)
   dayPaused = true;
-  saveState();
+  saveState(); // dayPaused=true sauvé dans Firebase pour cet atelier
   renderAll();
   pushActivity('system', '—', '✔ Journée clôturée', `par ${currentUser||'—'}`);
   showToast(`✔ Journée clôturée — timers en pause.`);
@@ -2056,7 +2058,7 @@ function newDay(){
   saveTransfersDay();
 
   // ── Reprendre les timers (lever la pause) ──
-  dayPaused = false;
+  dayPaused = false; // lever pause pour cet atelier
   for(const [pk,prod] of Object.entries(PRODUCTS)){
     for(const m of prod.malaxeurs){
       if(m.simple) continue;
