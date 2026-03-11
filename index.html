@@ -786,7 +786,7 @@ function applyModeButtons(){
   const isViewer = !isOwner && !isResp;
   const vis = {
     btnUndo          : isOwner,
-    btnNeutreConfig  : isOwner || isResp,
+    btnNeutreConfig  : (isOwner || isResp) && currentAtelier !== 'B',
     btnHistoire      : isResp || isViewer,
     btnStatistiques  : isResp || isViewer,
     btnActivite      : isResp,
