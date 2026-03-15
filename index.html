@@ -392,6 +392,7 @@ window.dispatchEvent(new Event('fbReady'));
   <div class="login-box">
     <div class="login-logo">PROD<span>.</span>CTRL</div>
     <div class="login-sub" id="loginAtelierLabel">ATELIER A</div>
+    <button onclick="goHome()" style="margin-bottom:20px;width:100%;padding:4px;border:none;background:transparent;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:11px;cursor:pointer;letter-spacing:.3px" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">✏️ Changer l'Atelier</button>
 
     <button class="btn-biometric" id="btnBiometric" onclick="loginWithBiometric()">🫆 Empreinte / Visage</button>
     <div id="biometricDivider" class="login-divider" style="display:none">ou entrer le code</div>
@@ -562,6 +563,7 @@ const RESPONSABLE_CODE = 'RESPONSABLE';
 let isOwner = false;
 
 function goHome(){
+  localStorage.removeItem('prodctrl_session');
   // Stopper Firebase sync et présence
   if(_presenceId && window._fbReady){
     window._fbSet(FB_PATH+'/presence/'+_presenceId, null).catch(()=>{});
@@ -620,6 +622,65 @@ function selectAtelier(atelier){
   document.getElementById('loginOverlay').style.display = 'flex';
   setTimeout(initBiometricButton, 100);
   setTimeout(()=>document.getElementById('loginInput').focus(), 200);
+}
+
+function restoreSession(){
+  try {
+    const saved = localStorage.getItem('prodctrl_session');
+    if(!saved) return false;
+    const s = JSON.parse(saved);
+    if(!s.name || !s.atelier || !s.role) return false;
+
+    // Restaurer les variables
+    currentUser  = s.name;
+    currentAtelier = s.atelier;
+    FB_PATH = 'atelier' + s.atelier;
+    PRODUCTS = s.atelier === 'B' ? PRODUCTS_B : PRODUCTS_A;
+
+    // Appliquer le rôle directement
+    if(s.role === 'owner'){
+      isOwner = true;
+      document.getElementById('accessBadge').textContent = 'OWNER';
+      document.getElementById('accessBadge').className = 'access-badge badge-owner';
+      document.getElementById('viewerBanner').style.display = 'none';
+      document.body.classList.remove('viewer-mode','responsable-mode');
+      document.getElementById('atelierSelectOverlay').style.display = 'none';
+      document.getElementById('loginOverlay').style.display = 'none';
+      document.getElementById('app').style.display = '';
+      startApp();
+      setTimeout(applyModeButtons, 50);
+      return true;
+    } else if(s.role === 'responsable'){
+      isOwner = false;
+      document.body.classList.add('responsable-mode');
+      document.getElementById('accessBadge').textContent = 'RESPONSABLE';
+      document.getElementById('accessBadge').className = 'access-badge badge-responsable';
+      document.getElementById('viewerBanner').style.display = 'flex';
+      document.getElementById('viewerBanner').innerHTML = '🟡 <span>MODE RESPONSABLE — Visualisation complète · Lecture seule</span>';
+      document.getElementById('atelierSelectOverlay').style.display = 'none';
+      document.getElementById('loginOverlay').style.display = 'none';
+      document.getElementById('app').style.display = '';
+      const btnCH = document.getElementById('btnClearHistory');
+      if(btnCH) btnCH.style.display = 'inline-flex';
+      startApp();
+      setTimeout(applyModeButtons, 50);
+      return true;
+    } else if(s.role === 'viewer'){
+      isOwner = false;
+      document.body.classList.add('viewer-mode');
+      document.getElementById('accessBadge').textContent = 'LECTURE SEULE';
+      document.getElementById('accessBadge').className = 'access-badge badge-viewer';
+      document.getElementById('viewerBanner').style.display = 'flex';
+      document.getElementById('atelierSelectOverlay').style.display = 'none';
+      document.getElementById('loginOverlay').style.display = 'none';
+      document.getElementById('app').style.display = '';
+      startApp();
+      setTimeout(applyViewerLayout, 100);
+      setTimeout(applyModeButtons, 50);
+      return true;
+    }
+  } catch(e){}
+  return false;
 }
 
 function checkAccess(){
@@ -768,6 +829,12 @@ function setResponsableMode(){
   _lastLoginRole = 'responsable';
   isOwner = false;
   currentUser = getLoginName() + ' 👁';
+  // Mémoriser sur cet appareil
+  localStorage.setItem('prodctrl_session', JSON.stringify({
+    name: currentUser, atelier: currentAtelier,
+    code: document.getElementById('loginInput')?.value || '',
+    role: 'responsable'
+  }));
   document.getElementById('loginOverlay').style.display='none';
   document.body.classList.remove('viewer-mode');
   document.body.classList.add('responsable-mode');
@@ -802,6 +869,12 @@ function applyModeButtons(){
 function setOwnerMode(){
   _lastLoginRole = 'owner';
   isOwner = true;
+  // Mémoriser sur cet appareil
+  localStorage.setItem('prodctrl_session', JSON.stringify({
+    name: currentUser, atelier: currentAtelier,
+    code: document.getElementById('loginInput')?.value || '',
+    role: 'owner'
+  }));
   document.getElementById('loginOverlay').style.display='none';
   document.body.classList.remove('viewer-mode');
   document.getElementById('accessBadge').textContent = 'OWNER';
@@ -821,6 +894,11 @@ function applyViewerLayout(){
 function enterViewer(){
   currentUser = (currentUser||'Anonyme') + ' 👁';
   isOwner = false;
+  // Mémoriser lecture seule
+  localStorage.setItem('prodctrl_session', JSON.stringify({
+    name: currentUser, atelier: currentAtelier,
+    code: '', role: 'viewer'
+  }));
   document.getElementById('loginOverlay').style.display='none';
   document.body.classList.add('viewer-mode');
   document.getElementById('accessBadge').textContent = 'LECTURE SEULE';
@@ -1975,14 +2053,7 @@ function closeDay(){
       const transf = transfersOfDay[pk]?.[s.id]  || 0;
       const fin    = state[pk].stocks[s.id]?.qty  || 0;
       // Qté restante dans malaxeurs à l'étape "vers stock" uniquement
-      let enCours = 0;
-      const vsIdxConso = versStockIdx(pk);
-      for(const m of prod.malaxeurs){
-        if(m.simple) continue;
-        const ms2 = state[pk]?.malaxeurs[m.id];
-        if(ms2 && ms2.step === vsIdxConso) enCours += ms2.qty || 0;
-      }
-      conso[s.id] = { debut, transf, fin, enCours, consomme: debut + transf - fin - enCours };
+      conso[s.id] = { debut, transf, fin, consomme: debut + transf - fin };
     }
     snap.products[pk]={name:prod.name,malaxeurs:malData,stockTotal,malQty,total:stockTotal+malQty,conso};
   }
@@ -2572,7 +2643,7 @@ resetDay       = requireOwner(resetDay);
 newDay         = requireOwner(newDay);
 undoLastAction = requireOwner(undoLastAction);
 
-checkAccess();
+if(!restoreSession()) checkAccess();
 </script>
 <script>
 // ===== PWA SERVICE WORKER =====

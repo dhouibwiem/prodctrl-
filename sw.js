@@ -1,4 +1,4 @@
-const CACHE_NAME = 'prodctrl-v1773254134';
+const CACHE_NAME = 'prodctrl-v1773562770';
 const ASSETS = [
   './manifest.json', './icon-192.png', './icon-512.png',
   'https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600&display=swap',
