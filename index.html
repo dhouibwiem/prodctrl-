@@ -50,6 +50,17 @@ window.dispatchEvent(new Event('fbReady'));
     --finesse:#5ab4f5; --finesse-dim:#122640; --finesse-glow:rgba(90,180,245,0.15);
     --ok:#5af5a0; --danger:#f55a5a; --warning:#f5a942; --radius:10px;
   }
+  /* MODE JOUR */
+  body.light-mode {
+    --bg:#f0f2f5; --surface:#ffffff; --surface2:#e8ecf2;
+    --border:#d0d6e0; --border2:#c0c8d8;
+    --text:#1a1e2a; --muted:#7a8299; --dim:#5a6278;
+    --pomme-dim:#d4f0cc; --citron-dim:#fdf3c0; --finesse-dim:#cce8fa;
+    --pomme-glow:rgba(111,207,90,0.2); --citron-glow:rgba(245,200,66,0.2); --finesse-glow:rgba(90,180,245,0.2);
+  }
+  body.light-mode .login-overlay{ background:rgba(220,225,235,.92) }
+  body.light-mode .login-box{ box-shadow:0 20px 60px rgba(0,0,0,.15) }
+  body.light-mode .tank-fill-waves{ opacity:.3 }
   *{margin:0;padding:0;box-sizing:border-box}
   body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh;font-size:13px}
 
@@ -349,11 +360,11 @@ window.dispatchEvent(new Event('fbReady'));
   .access-badge{font-family:'DM Mono',monospace;font-size:9px;padding:3px 8px;border-radius:4px;letter-spacing:1px;font-weight:500;margin-left:4px}
   .badge-owner{background:rgba(90,245,160,.15);color:var(--ok);border:1px solid rgba(90,245,160,.35)}
   .badge-viewer{background:rgba(245,85,85,.15);color:var(--danger);border:1px solid rgba(245,85,85,.35)}
-  body.viewer-mode input, body.viewer-mode button:not(.btn-hist):not(.btn-hist-lots):not(.btn-home):not(.modal-close):not(#btnStatistiques){pointer-events:none!important;opacity:.45!important;cursor:not-allowed!important}
+  body.viewer-mode #app input, body.viewer-mode #app button:not(.btn-hist):not(.btn-hist-lots):not(.btn-home):not(.modal-close):not(#btnStatistiques){pointer-events:none!important;opacity:.45!important;cursor:not-allowed!important}
   body.viewer-mode .btn-close-day, body.viewer-mode .btn-reset, body.viewer-mode .btn-new-day{display:none!important}
   body.viewer-mode .day-summary{margin-top:0}
   /* Mode RESPONSABLE : identique owner visuellement, juste bloqué au clic */
-  body.responsable-mode input, body.responsable-mode button:not(.btn-home):not(.btn-hist):not(.modal-close):not(.act-filter-btn):not(.act-filter-input):not(#btnStatistiques):not(#btnReinit){pointer-events:none!important;cursor:default!important}
+  body.responsable-mode #app input, body.responsable-mode #app button:not(.btn-home):not(.btn-hist):not(.modal-close):not(.act-filter-btn):not(.act-filter-input):not(#btnStatistiques):not(#btnReinit){pointer-events:none!important;cursor:default!important}
   body.responsable-mode .btn-close-day, body.responsable-mode .btn-reset, body.responsable-mode .btn-new-day{display:none!important}
   @media(max-width:900px){.summary-grid{grid-template-columns:1fr}.product-body{flex-direction:column}.hist-grid{grid-template-columns:1fr}.header-right{gap:4px}}
 </style>
@@ -425,6 +436,7 @@ window.dispatchEvent(new Event('fbReady'));
   </div>
   <div class="header-right">
     <button class="btn-home" onclick="goHome()" style="background:rgba(255,255,255,.06);border:1px solid var(--border2);color:var(--muted);font-family:'DM Mono',monospace;font-size:11px;padding:6px 12px;border-radius:6px;cursor:pointer;transition:all .2s" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">🏠 Accueil</button>
+    <button id="btnTheme" onclick="toggleTheme()" title="Mode jour/nuit" style="background:rgba(255,255,255,.06);border:1px solid var(--border2);color:var(--muted);font-family:'DM Mono',monospace;font-size:14px;padding:5px 10px;border-radius:6px;cursor:pointer;transition:all .2s">🌙</button>
     <div class="live-dot"></div>
     <div class="live-label" id="fbStatus">CONNEXION...</div>
     <div class="presence-bar" id="presenceBar"></div>
@@ -562,6 +574,33 @@ const ACCESS_CODES = {A:'ATELIERA2026', B:'ATELIERB2026'};
 const RESPONSABLE_CODE = 'RESPONSABLE';
 let isOwner = false;
 
+function toggleTheme(){
+  const isLight = document.body.classList.toggle('light-mode');
+  document.getElementById('btnTheme').textContent = isLight ? '🌙' : '☀️';
+  localStorage.setItem('prodctrl_theme', isLight ? 'light' : 'dark');
+}
+
+function applyTheme(){
+  // 1. Vérifier préférence sauvegardée
+  const saved = localStorage.getItem('prodctrl_theme');
+  if(saved){
+    if(saved === 'light'){ document.body.classList.add('light-mode'); const b=document.getElementById('btnTheme'); if(b) b.textContent='🌙'; }
+    return;
+  }
+  // 2. Suivre le système
+  if(window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches){
+    document.body.classList.add('light-mode');
+    const b=document.getElementById('btnTheme'); if(b) b.textContent='🌙';
+  }
+  // Écouter les changements système
+  window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', e => {
+    if(!localStorage.getItem('prodctrl_theme')){
+      document.body.classList.toggle('light-mode', e.matches);
+      const b=document.getElementById('btnTheme'); if(b) b.textContent=e.matches?'🌙':'☀️';
+    }
+  });
+}
+
 function goHome(){
   localStorage.removeItem('prodctrl_session');
   // Stopper Firebase sync et présence
@@ -630,6 +669,9 @@ function restoreSession(){
     if(!saved) return false;
     const s = JSON.parse(saved);
     if(!s.name || !s.atelier || !s.role) return false;
+    // Vérifier que le code est toujours valide
+    if(s.role === 'owner' && s.code !== ACCESS_CODES[s.atelier]) return false;
+    if(s.role === 'responsable' && s.code !== RESPONSABLE_CODE) return false;
 
     // Restaurer les variables
     currentUser  = s.name;
@@ -2643,6 +2685,7 @@ resetDay       = requireOwner(resetDay);
 newDay         = requireOwner(newDay);
 undoLastAction = requireOwner(undoLastAction);
 
+applyTheme();
 if(!restoreSession()) checkAccess();
 </script>
 <script>
