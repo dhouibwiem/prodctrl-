@@ -365,7 +365,7 @@ window.dispatchEvent(new Event('fbReady'));
   body.viewer-mode .day-summary{margin-top:0}
   /* Mode RESPONSABLE : identique owner visuellement, juste bloqué au clic */
   body.responsable-mode #app input, body.responsable-mode #app button:not(.btn-home):not(.btn-hist):not(.modal-close):not(.act-filter-btn):not(.act-filter-input):not(#btnStatistiques):not(#btnReinit){pointer-events:none!important;cursor:default!important}
-  body.responsable-mode .btn-close-day, body.responsable-mode .btn-reset, body.responsable-mode .btn-new-day{display:none!important}
+  body.responsable-mode .btn-reset, body.responsable-mode .btn-close-day, body.responsable-mode .btn-new-day{display:none!important}
   @media(max-width:900px){.summary-grid{grid-template-columns:1fr}.product-body{flex-direction:column}.hist-grid{grid-template-columns:1fr}.header-right{gap:4px}}
 </style>
 </head>
@@ -973,6 +973,17 @@ function openNeutreConfig(){
 function requireOwner(fn){
   return function(...args){
     if(!isOwner){
+      showToast('🔒 Accès refusé — mode lecture seule');
+      return;
+    }
+    return fn(...args);
+  };
+}
+
+function requireResponsable(fn){
+  return function(...args){
+    const isResp = document.body.classList.contains('responsable-mode');
+    if(!isOwner && !isResp){
       showToast('🔒 Accès refusé — mode lecture seule');
       return;
     }
@@ -2065,11 +2076,16 @@ function cancelCloseDay(){
 let _closeDayCallback = null;
 
 function closeDay(){
+  if(!confirm('Clôturer la journée ? Les quantités peuvent être ajustées.')) return;
+  _doCloseDay();
+}
+
+function closeDay_modal(){
   // Construire modal avec stocks + malaxeurs en vers stock
   const vsIdxMap = {};
   for(const [pk] of Object.entries(PRODUCTS)) vsIdxMap[pk] = versStockIdx(pk);
 
-  let html = '<div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);margin-bottom:16px;letter-spacing:1px">SAISIR LES QUANTITÉS FIN DE JOURNÉE</div>';
+  let html = `<div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);margin-bottom:16px;letter-spacing:1px">SAISIR LES QUANTITÉS FIN DE JOURNÉE</div>`;
 
   for(const [pk, prod] of Object.entries(PRODUCTS)){
     const col = pk==='pomme'?'var(--pomme)':pk==='citron'?'var(--citron)':'var(--finesse)';
@@ -2112,6 +2128,7 @@ function closeDay(){
 
 function confirmCloseDay(){
   document.getElementById('closeDayModal').style.display = 'none';
+  // Appliquer valeurs saisies
 
   // Appliquer les valeurs saisies
   for(const [pk, prod] of Object.entries(PRODUCTS)){
