@@ -1795,10 +1795,7 @@ function nextStep(pk,malId){
   // Mémoriser le début du cycle au 1er démarrage
   if(prev===-1) ms.cycleStart = Date.now();
 
-  // Mettre à jour action dans présence
-  const _steps = getSteps(pk);
-  const _stepLbl = _steps[ms.step]?.label || '';
-  if(window._updateMyAction) window._updateMyAction(`${malId} → ${_stepLbl}`);
+
 
   // Malaxeur vide → qté = 0
   if(ms.step===videIdx(pk)) ms.qty = 0;
@@ -2267,13 +2264,6 @@ function startPresence(){
     window._fbSet(presPath + '/' + myId, null).catch(()=>{});
   });
 
-  // Exposer fonction pour mettre à jour l'action
-  window._updateMyAction = (action) => {
-    if(_presenceId && window._fbReady){
-      window._fbSet(presPath + '/' + _presenceId + '/action', action).catch(()=>{});
-    }
-  };
-
   // Écouter tous les connectés
   window._fbOnValue(presPath, (remote) => {
     if(!remote){ renderPresence([]); return; }
@@ -2289,15 +2279,9 @@ function renderPresence(users){
   const bar = document.getElementById('presenceBar');
   if(!bar) return;
   if(users.length === 0){ bar.innerHTML = ''; return; }
-  const isResp = document.body.classList.contains('responsable-mode');
   const avatars = users.map(u => {
     const icon = u.role === 'owner' ? '⚡' : u.role === 'responsable' ? '🟡' : '👁';
-    const roleLabel = u.role === 'owner' ? 'Modification' : u.role === 'responsable' ? 'Responsable' : 'Lecture seule';
-    const actionHtml = isResp && u.action && u.action !== 'connecté'
-      ? `<span style="font-size:9px;color:var(--citron);margin-left:3px">(${u.action})</span>`
-      : '';
-    const tooltip = isResp ? `${roleLabel}${u.action ? ' — ' + u.action : ''}` : roleLabel;
-    return `<span class="presence-avatar${u.isMe?' me':''}" title="${tooltip}" style="cursor:default">${icon} ${u.name}${actionHtml}</span>`;
+    return `<span class="presence-avatar${u.isMe?' me':''}" title="${u.role==='owner'?'Owner':u.role==='responsable'?'Responsable':'Lecture seule'}">${icon} ${u.name}</span>`;
   }).join('');
   bar.innerHTML = `<span class="presence-dot"></span>${avatars}`;
 }
