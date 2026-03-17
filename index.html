@@ -2069,7 +2069,7 @@ function closeDay(){
   const vsIdxMap = {};
   for(const [pk] of Object.entries(PRODUCTS)) vsIdxMap[pk] = versStockIdx(pk);
 
-  let html = '<div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);margin-bottom:16px;letter-spacing:1px">SAISIR LES QUANTITÉS FIN DE JOURNÉE</div>';
+  let html = `<div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);margin-bottom:16px;letter-spacing:1px">SAISIR LES QUANTITÉS FIN DE JOURNÉE</div>`;
 
   for(const [pk, prod] of Object.entries(PRODUCTS)){
     const col = pk==='pomme'?'var(--pomme)':pk==='citron'?'var(--citron)':'var(--finesse)';
