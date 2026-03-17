@@ -1547,7 +1547,7 @@ function renderStocks(pk,prod){
       <div class="tank-bottom">
         <div class="tank-qty-row">
           <input type="number" class="tank-input${isEmpty?' empty-input':''}" value="${ss.qty}" min="0" max="${s.max}"
-            onchange="setStockQty('${pk}','${s.id}',this.value)" onclick="this.select()">
+            onchange="setStockQty('${pk}','${s.id}',this.value)" onclick="this.select()" ${dayPaused||!isOwner?'readonly style=\"opacity:.5;cursor:not-allowed\"':''}>
           <span class="qty-unit">T</span>
         </div>
         <div class="tank-max">Max: ${s.max}T</div>
@@ -2058,8 +2058,86 @@ function cycleStockMode(pk,stockId){
 }
 
 // ===== CLOSE DAY (keeps state, saves to history) =====
+function cancelCloseDay(){
+  document.getElementById('closeDayModal').style.display = 'none';
+}
+
+let _closeDayCallback = null;
+
 function closeDay(){
-  if(!confirm('Clôturer la journée ? L\'état actuel sera sauvegardé dans l\'historique.\nLes malaxeurs restent en place pour continuer demain.')) return;
+  // Construire modal avec stocks + malaxeurs en vers stock
+  const vsIdxMap = {};
+  for(const [pk] of Object.entries(PRODUCTS)) vsIdxMap[pk] = versStockIdx(pk);
+
+  let html = '<div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);margin-bottom:16px;letter-spacing:1px">SAISIR LES QUANTITÉS FIN DE JOURNÉE</div>';
+
+  for(const [pk, prod] of Object.entries(PRODUCTS)){
+    const col = pk==='pomme'?'var(--pomme)':pk==='citron'?'var(--citron)':'var(--finesse)';
+    html += `<div style="margin-bottom:20px">`;
+    html += `<div style="font-family:'DM Mono',monospace;font-size:10px;color:${col};letter-spacing:2px;margin-bottom:10px">${prod.name.toUpperCase()}</div>`;
+
+    // Stocks
+    html += `<div style="margin-bottom:8px;font-size:11px;color:var(--dim)">📦 Quantités fin de journée — Stocks</div>`;
+    for(const s of prod.stocks){
+      const ss = state[pk].stocks[s.id];
+      html += `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+        <span style="font-family:'DM Mono',monospace;font-size:12px;min-width:80px">${s.id}</span>
+        <input type="number" id="close_stock_${pk}_${s.id}" value="${ss.qty||0}" min="0" max="${s.max}" step="0.1"
+          style="width:80px;padding:5px 8px;border-radius:6px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-family:'DM Mono',monospace;font-size:13px;text-align:right">
+        <span style="color:var(--muted);font-size:11px">/ ${s.max}T</span>
+      </div>`;
+    }
+
+    // Malaxeurs en vers stock
+    const vsIdx = vsIdxMap[pk];
+    const malVersStock = prod.malaxeurs.filter(m => !m.simple && state[pk]?.malaxeurs[m.id]?.step === vsIdx);
+    if(malVersStock.length > 0){
+      html += `<div style="margin:10px 0 8px;font-size:11px;color:var(--citron)">⚗️ Quantité restante — Malaxeurs en "Vers stock"</div>`;
+      for(const m of malVersStock){
+        const ms = state[pk].malaxeurs[m.id];
+        html += `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+          <span style="font-family:'DM Mono',monospace;font-size:12px;min-width:80px">${m.id}</span>
+          <input type="number" id="close_mal_${pk}_${m.id}" value="${ms.qty||0}" min="0" max="${m.max}" step="0.1"
+            style="width:80px;padding:5px 8px;border-radius:6px;border:1px solid var(--citron);background:var(--surface2);color:var(--citron);font-family:'DM Mono',monospace;font-size:13px;text-align:right">
+          <span style="color:var(--muted);font-size:11px">T restantes</span>
+        </div>`;
+      }
+    }
+    html += '</div>';
+  }
+
+  document.getElementById('closeDayContent').innerHTML = html;
+  document.getElementById('closeDayModal').style.display = 'flex';
+}
+
+function confirmCloseDay(){
+  document.getElementById('closeDayModal').style.display = 'none';
+
+  // Appliquer les valeurs saisies
+  for(const [pk, prod] of Object.entries(PRODUCTS)){
+    // Stocks
+    for(const s of prod.stocks){
+      const inp = document.getElementById(`close_stock_${pk}_${s.id}`);
+      if(inp) state[pk].stocks[s.id].qty = parseFloat(inp.value)||0;
+    }
+    // Malaxeurs en vers stock
+    const vsIdx = versStockIdx(pk);
+    for(const m of prod.malaxeurs){
+      if(m.simple) continue;
+      const ms = state[pk]?.malaxeurs[m.id];
+      if(ms && ms.step === vsIdx){
+        const inp = document.getElementById(`close_mal_${pk}_${m.id}`);
+        if(inp) ms.qty = parseFloat(inp.value)||0;
+      }
+    }
+  }
+
+  // Continuer avec la clôture normale
+  _doCloseDay();
+}
+
+function _doCloseDay(){
+  if(!confirm('Confirmer la clôture de la journée ?')) return;
 
   // ── Geler tous les timers actifs ──
   for(const [pk,prod] of Object.entries(PRODUCTS)){
@@ -2116,6 +2194,8 @@ function closeDay(){
   pushActivity('system', '—', '✔ Journée clôturée', `par ${currentUser||'—'}`);
   showToast(`✔ Journée clôturée — timers en pause.`);
 }
+
+
 
 function clearHistory(){
   if(!confirm('Effacer TOUT l\'historique ?\nCette action est irréversible.')) return;
@@ -2741,5 +2821,20 @@ function installApp(){
   _installPrompt.userChoice.then(()=>{ _installPrompt = null; });
 }
 </script>
+
+<!-- MODAL CLÔTURE JOURNÉE -->
+<div class="modal-overlay" id="closeDayModal" style="display:none;z-index:1100">
+  <div class="modal-box" style="max-width:600px;width:95%;max-height:85vh;overflow-y:auto">
+    <div class="modal-header">
+      <div class="modal-title">✔ Clôture de journée</div>
+      <button class="modal-close" onclick="cancelCloseDay()">✕</button>
+    </div>
+    <div id="closeDayContent" style="padding:16px"></div>
+    <div style="padding:0 16px 16px;display:flex;gap:10px;justify-content:flex-end">
+      <button onclick="cancelCloseDay()" style="padding:8px 18px;border-radius:8px;border:1px solid var(--border2);background:transparent;color:var(--muted);cursor:pointer;font-family:'DM Sans',sans-serif">Annuler</button>
+      <button onclick="confirmCloseDay()" style="padding:8px 18px;border-radius:8px;border:none;background:var(--ok);color:#000;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">✔ Confirmer la clôture</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
