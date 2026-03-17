@@ -460,7 +460,7 @@ window.dispatchEvent(new Event('fbReady'));
   </div>
 </header>
 
-<main>
+<main id="app">
   <div id="pomme-citron-sections">
   <div class="section-title">ALYS POMME</div>
   <div class="product-block">
@@ -2137,7 +2137,6 @@ function confirmCloseDay(){
 }
 
 function _doCloseDay(){
-  if(!confirm('Confirmer la clôture de la journée ?')) return;
 
   // ── Geler tous les timers actifs ──
   for(const [pk,prod] of Object.entries(PRODUCTS)){
@@ -2823,7 +2822,7 @@ function installApp(){
 </script>
 
 <!-- MODAL CLÔTURE JOURNÉE -->
-<div class="modal-overlay" id="closeDayModal" style="display:none;z-index:1100">
+<div class="modal-overlay" id="closeDayModal" style="display:none;z-index:1100;position:fixed">
   <div class="modal-box" style="max-width:600px;width:95%;max-height:85vh;overflow-y:auto">
     <div class="modal-header">
       <div class="modal-title">✔ Clôture de journée</div>
