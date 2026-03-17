@@ -980,6 +980,17 @@ function requireOwner(fn){
   };
 }
 
+function requireResponsable(fn){
+  return function(...args){
+    const isResp = document.body.classList.contains('responsable-mode');
+    if(!isOwner && !isResp){
+      showToast('🔒 Accès refusé — mode lecture seule');
+      return;
+    }
+    return fn(...args);
+  };
+}
+
 // ===== CONFIG =====
 const ALL_STEPS = [
   {id:'eau',     label:"Remplissage d'eau"},
@@ -2768,9 +2779,9 @@ setLot         = requireOwner(setLot);
 setQty         = requireOwner(setQty);
 setStockQty    = requireOwner(setStockQty);
 cycleStockMode = requireOwner(cycleStockMode);
-closeDay       = requireOwner(closeDay);
+closeDay       = requireResponsable(closeDay);
 resetDay       = requireOwner(resetDay);
-newDay         = requireOwner(newDay);
+newDay         = requireResponsable(newDay);
 undoLastAction = requireOwner(undoLastAction);
 
 applyTheme();
