@@ -58,6 +58,11 @@ window.dispatchEvent(new Event('fbReady'));
     --pomme-dim:#d4f0cc; --citron-dim:#fdf3c0; --finesse-dim:#cce8fa;
     --pomme-glow:rgba(111,207,90,0.2); --citron-glow:rgba(245,200,66,0.2); --finesse-glow:rgba(90,180,245,0.2);
   }
+  body.light-mode .btn-hd{background:#e2e6ef;border-color:#b0b8cc;color:#1a1e2a}
+  body.light-mode .btn-hd:hover{background:#d0d6e8;border-color:#8591a8}
+  body.light-mode .btn-undo-hd{background:rgba(245,85,85,.15)!important;border-color:rgba(200,50,50,.5)!important;color:#c0000a!important}
+  body.light-mode .btn-close-day{border-color:rgba(0,150,80,.4)!important;color:#006633!important}
+  body.light-mode .btn-new-day{border-color:rgba(180,100,0,.4)!important;color:#7a4400!important}
   body.light-mode .login-overlay{ background:rgba(220,225,235,.92) }
   body.light-mode .login-box{ box-shadow:0 20px 60px rgba(0,0,0,.15) }
   body.light-mode .tank-fill-waves{ opacity:.3 }
@@ -75,7 +80,7 @@ window.dispatchEvent(new Event('fbReady'));
   .live-dot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok);animation:pulse 2s infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
   .live-label{font-family:'DM Mono',monospace;font-size:10px;color:var(--ok);letter-spacing:1px;margin-right:4px}
-  .btn-hd{background:var(--surface2);border:1px solid var(--border2);color:var(--dim);font-family:'DM Sans',sans-serif;font-size:10px;padding:4px 9px;border-radius:6px;cursor:pointer;transition:all .2s;white-space:nowrap}
+  .btn-hd{background:var(--surface2);border:1px solid var(--border2);color:var(--text);font-family:'DM Sans',sans-serif;font-size:10px;padding:4px 9px;border-radius:6px;cursor:pointer;transition:all .2s;white-space:nowrap;font-weight:500}
   .btn-hd:hover{border-color:var(--citron);color:var(--citron)}
   .btn-hist{border-color:rgba(90,180,245,.3);color:var(--finesse)}
   .btn-hist:hover{border-color:var(--finesse);color:var(--finesse);background:var(--finesse-glow)}
@@ -448,7 +453,7 @@ window.dispatchEvent(new Event('fbReady'));
     <div class="live-label" id="fbStatus">SYNC</div>
     <div class="presence-bar" id="presenceBar"></div>
     <span class="access-badge" id="accessBadge"></span>
-    <button class="btn-hd btn-undo-hd" id="btnUndo" onclick="undoLastAction()" disabled style="background:rgba(245,85,85,.12);border-color:rgba(245,85,85,.4);color:var(--danger);font-weight:600">↩ Annuler</button>
+    <button class="btn-hd btn-undo-hd" id="btnUndo" onclick="openUndoModal()" disabled style="background:rgba(245,85,85,.12);border-color:rgba(245,85,85,.4);color:var(--danger);font-weight:600">↩ Annuler</button>
     <button id="btnNeutreConfig" class="btn-hd" onclick="openNeutreConfig()" style="display:none;background:rgba(245,85,85,.1);border-color:rgba(245,85,85,.3);color:var(--danger)">⏱ <span id="neutreMinLabel">60</span>min</button>
     <button id="btnHistoire" class="btn-hd btn-hist" onclick="openHistory()">📋 Historique</button>
     <button id="btnStatistiques" class="btn-hd" onclick="openConsommation()" style="background:rgba(245,200,66,.1);border-color:rgba(245,200,66,.3);color:var(--citron)">📊 Stats</button>
@@ -1801,6 +1806,66 @@ function pushUndo(){
   if(btn) btn.disabled=false;
 }
 
+function openUndoModal(){
+  // Construire la liste des malaxeurs en cours avec leurs étapes complétées
+  let html = '';
+  for(const [pk, prod] of Object.entries(PRODUCTS)){
+    for(const m of prod.malaxeurs){
+      if(m.simple) continue;
+      const ms = state[pk]?.malaxeurs[m.id];
+      if(!ms || ms.step <= 0) continue; // pas d'étape à annuler si step=0 ou -1
+      const steps = getSteps(pk);
+      // Options : étapes 0 jusqu'à step actuel (non inclus)
+      const options = steps.slice(0, ms.step).map((s,i) =>
+        `<option value="${pk}|${m.id}|${i}">${m.id} → Revenir à : ${s.label}</option>`
+      ).reverse().join(''); // plus récent en premier
+      if(options){
+        html += `<optgroup label="── ${m.id} (étape actuelle: ${steps[ms.step]?.label}) ──">${options}</optgroup>`;
+      }
+    }
+  }
+  if(!html){
+    showToast('↩ Aucune étape à annuler');
+    return;
+  }
+  document.getElementById('undoSelectContent').innerHTML = `
+    <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:1px;margin-bottom:12px">CHOISIR L'ÉTAPE CIBLE</div>
+    <select id="undoStepSelect" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;outline:none;cursor:pointer">
+      <option value="">-- Sélectionner --</option>
+      ${html}
+    </select>
+    <div style="font-size:11px;color:var(--danger);margin-top:10px;padding:8px;background:rgba(245,85,85,.08);border-radius:6px;border:1px solid rgba(245,85,85,.2)">
+      ⚠ Les données des étapes suivantes seront perdues
+    </div>
+  `;
+  document.getElementById('undoSelectModal').classList.add('open');
+}
+
+function confirmUndoStep(){
+  const sel = document.getElementById('undoStepSelect');
+  if(!sel || !sel.value){ showToast('⚠ Veuillez sélectionner une étape'); return; }
+  const [pk, malId, stepIdx] = sel.value.split('|');
+  const idx = parseInt(stepIdx);
+  document.getElementById('undoSelectModal').classList.remove('open');
+
+  pushUndo();
+  const ms = state[pk].malaxeurs[malId];
+  const steps = getSteps(pk);
+
+  // Effacer stepSecs des étapes après idx
+  for(let i = idx; i < steps.length; i++){
+    if(ms.stepSecs) ms.stepSecs[i] = 0;
+  }
+  advanceTimer(malId, ms.step, idx, pk);
+  ms.step = idx;
+  ms.stepStart = Date.now();
+  if(timers[malId]) timers[malId].stepStart = ms.stepStart;
+
+  pushActivity('undo', malId, `${malId} — Retour à : ${steps[idx]?.label}`, `par ${currentUser||'Owner'}`);
+  saveState(); renderAll(); startTick();
+  showToast(`↩ ${malId} revenu à l'étape : ${steps[idx]?.label}`);
+}
+
 function undoLastAction(){
   if(undoStack.length===0) return;
   window._undoBeforeState = JSON.parse(JSON.stringify(state));
@@ -2987,6 +3052,21 @@ function installApp(){
       <button class="modal-close" onclick="document.getElementById('pauseModal').classList.remove('open')">✕</button>
     </div>
     <div id="pauseModalContent" style="padding:16px"></div>
+  </div>
+</div>
+
+<!-- MODAL ANNULER ÉTAPE -->
+<div class="modal-overlay" id="undoSelectModal" style="z-index:1200">
+  <div class="modal-box" style="max-width:480px;width:92%">
+    <div class="modal-header">
+      <div class="modal-title">↩ Annuler — Choisir l'étape</div>
+      <button class="modal-close" onclick="document.getElementById('undoSelectModal').classList.remove('open')">✕</button>
+    </div>
+    <div id="undoSelectContent" style="padding:16px"></div>
+    <div style="padding:0 16px 16px;display:flex;gap:10px;justify-content:flex-end">
+      <button onclick="document.getElementById('undoSelectModal').classList.remove('open')" style="padding:8px 18px;border-radius:8px;border:1px solid var(--border2);background:transparent;color:var(--muted);cursor:pointer;font-family:'DM Sans',sans-serif">Annuler</button>
+      <button onclick="confirmUndoStep()" style="padding:8px 18px;border-radius:8px;border:none;background:var(--danger);color:#fff;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">↩ Confirmer</button>
+    </div>
   </div>
 </div>
 </body>
