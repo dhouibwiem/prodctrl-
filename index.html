@@ -221,6 +221,11 @@ window.dispatchEvent(new Event('fbReady'));
 
   /* BTN NEXT */
   .btn-next{width:100%;padding:7px;border-radius:6px;border:1px solid var(--border2);background:var(--surface);color:var(--dim);font-family:'DM Sans',sans-serif;font-size:11px;cursor:pointer;transition:all .2s;margin-top:7px;display:flex;align-items:center;justify-content:center;gap:5px}
+  .btn-pause-mal{padding:5px 10px;border-radius:6px;border:1px solid rgba(245,165,66,.4);background:rgba(245,165,66,.1);color:var(--warning);font-size:11px;cursor:pointer;transition:all .2s;white-space:nowrap}
+  .btn-pause-mal:hover{background:rgba(245,165,66,.2);border-color:var(--warning)}
+  .btn-pause-mal.paused{border-color:rgba(90,245,160,.4);background:rgba(90,245,160,.1);color:var(--ok)}
+  .btn-pause-mal.paused:hover{background:rgba(90,245,160,.2)}
+  .pause-badge{display:inline-flex;align-items:center;gap:4px;font-size:9px;color:var(--warning);font-family:'DM Mono',monospace;margin-top:3px;padding:2px 6px;background:rgba(245,165,66,.1);border-radius:4px;border:1px solid rgba(245,165,66,.3)}
   .btn-next:hover.pomme{background:var(--pomme-glow);border-color:var(--pomme);color:var(--pomme)}
   .btn-next:hover.citron{background:var(--citron-glow);border-color:var(--citron);color:var(--citron)}
   .btn-next:hover.finesse{background:var(--finesse-glow);border-color:var(--finesse);color:var(--finesse)}
@@ -425,38 +430,34 @@ window.dispatchEvent(new Event('fbReady'));
   🔴 <span id="viewerBannerText">MODE LECTURE SEULE</span>
 </div>
 
-<header>
-  <!-- LIGNE 1 : Identité + Statut + Badge -->
-  <div class="header-row1">
-    <div class="header-left">
-      <div class="logo-block">
-        <div class="logo">PROD<span>.</span>CTRL</div>
-        <div style="font-family:'DM Mono',monospace;font-size:7px;color:var(--muted);letter-spacing:1px">v1.5</div>
-        <div class="atelier-tag" id="atelierTag">ATELIER A</div>
-      </div>
-      <div class="header-date" id="dateDisplay"></div>
+<header style="flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between;padding:0 16px;min-height:54px;gap:6px">
+  <!-- GAUCHE : Logo + Date -->
+  <div class="header-left" style="flex-shrink:0">
+    <div class="logo-block">
+      <div class="logo">PROD<span>.</span>CTRL</div>
+      <div style="font-family:'DM Mono',monospace;font-size:7px;color:var(--muted);letter-spacing:1px">v1.5</div>
+      <div class="atelier-tag" id="atelierTag">ATELIER A</div>
     </div>
-    <div class="header-right">
-      <button class="btn-home" onclick="goHome()" style="background:rgba(255,255,255,.06);border:1px solid var(--border2);color:var(--muted);font-family:'DM Mono',monospace;font-size:10px;padding:4px 9px;border-radius:6px;cursor:pointer;white-space:nowrap">🏠 Accueil</button>
-      <button id="btnTheme" onclick="toggleTheme()" title="Mode jour/nuit" style="background:rgba(255,255,255,.06);border:1px solid var(--border2);color:var(--muted);font-size:13px;padding:4px 8px;border-radius:6px;cursor:pointer">🌙</button>
-      <div class="live-dot"></div>
-      <div class="live-label" id="fbStatus">SYNC ACTIF</div>
-      <div class="presence-bar" id="presenceBar"></div>
-      <span class="access-badge" id="accessBadge"></span>
-      <button id="btnInstall" onclick="installApp()" style="display:none;background:rgba(111,207,90,.12);border:1px solid rgba(111,207,90,.3);color:var(--ok);font-size:10px;padding:4px 9px;border-radius:6px;cursor:pointer;white-space:nowrap">⬇ Installer</button>
-    </div>
+    <div class="header-date" id="dateDisplay"></div>
   </div>
-  <!-- LIGNE 2 : Boutons actions -->
-  <div class="header-row2">
-    <button class="btn-hd btn-undo-hd" id="btnUndo" onclick="undoLastAction()" disabled>↩ Annuler</button>
+  <!-- DROITE : Tous les boutons sur une ligne -->
+  <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;flex:1;justify-content:flex-end">
+    <button class="btn-home btn-hd" onclick="goHome()" style="background:var(--surface2);border-color:var(--border2);color:var(--text);font-weight:600">🏠 Accueil</button>
+    <button id="btnTheme" onclick="toggleTheme()" title="Mode jour/nuit" style="background:var(--surface2);border:1px solid var(--border2);color:var(--dim);font-size:13px;padding:4px 8px;border-radius:6px;cursor:pointer">🌙</button>
+    <div class="live-dot"></div>
+    <div class="live-label" id="fbStatus">SYNC</div>
+    <div class="presence-bar" id="presenceBar"></div>
+    <span class="access-badge" id="accessBadge"></span>
+    <button class="btn-hd btn-undo-hd" id="btnUndo" onclick="undoLastAction()" disabled style="background:rgba(245,85,85,.12);border-color:rgba(245,85,85,.4);color:var(--danger);font-weight:600">↩ Annuler</button>
     <button id="btnNeutreConfig" class="btn-hd" onclick="openNeutreConfig()" style="display:none;background:rgba(245,85,85,.1);border-color:rgba(245,85,85,.3);color:var(--danger)">⏱ <span id="neutreMinLabel">60</span>min</button>
     <button id="btnHistoire" class="btn-hd btn-hist" onclick="openHistory()">📋 Historique</button>
-    <button id="btnStatistiques" class="btn-hd" onclick="openConsommation()" style="background:rgba(245,200,66,.1);border-color:rgba(245,200,66,.3);color:var(--citron)">📊 Statistiques</button>
+    <button id="btnStatistiques" class="btn-hd" onclick="openConsommation()" style="background:rgba(245,200,66,.1);border-color:rgba(245,200,66,.3);color:var(--citron)">📊 Stats</button>
     <button id="btnActivite" class="btn-hd btn-hist" onclick="openActivityLog()" style="background:rgba(90,180,245,.1);border-color:rgba(90,180,245,.3);color:#5ab4f5">📜 Activité</button>
-    <button class="btn-hd btn-close-day" onclick="closeDay()">✔ Clôturer journée</button>
-    <button class="btn-hd btn-new-day" onclick="newDay()">🌅 Nouvelle journée</button>
+    <button class="btn-hd btn-close-day" onclick="closeDay()">✔ Clôturer</button>
+    <button class="btn-hd btn-new-day" onclick="newDay()">🌅 Nouvelle J.</button>
     <button id="btnReinit" class="btn-hd btn-reset" onclick="resetDay()">↺ Réinit.</button>
-    <button id="btnClearHistory" class="btn-hd btn-reset" onclick="clearHistory()" style="display:none;opacity:.8">🗑 Réinit. historique</button>
+    <button id="btnClearHistory" class="btn-hd btn-reset" onclick="clearHistory()" style="display:none;opacity:.8">🗑 Hist.</button>
+    <button id="btnInstall" onclick="installApp()" style="display:none;background:rgba(111,207,90,.12);border:1px solid rgba(111,207,90,.3);color:var(--ok);font-size:10px;padding:4px 9px;border-radius:6px;cursor:pointer">⬇</button>
   </div>
 </header>
 
@@ -970,6 +971,102 @@ function openNeutreConfig(){
   showToast(`✅ Seuil neutralisation : ${n} min`);
 }
 
+// ===== PAUSE MALAXEUR =====
+const PAUSE_REASONS = [
+  'Pas de matière première',
+  'Pause repas',
+  'Panne équipement',
+  'Attente contrôle qualité',
+  'Autre'
+];
+
+function togglePauseMal(pk, malId){
+  const ms = state[pk]?.malaxeurs[malId];
+  const t = timers[malId];
+  if(!ms || ms.step < 0) return;
+
+  if(!ms.paused){
+    // Démarrer pause → ouvrir modal cause
+    openPauseModal(pk, malId);
+  } else {
+    // Reprendre → calculer durée pause
+    const pauseDur = ms.pauseStart ? Math.floor((Date.now() - ms.pauseStart)/1000) : 0;
+    ms.totalPauseSecs = (ms.totalPauseSecs||0) + pauseDur;
+    ms.paused = false;
+    ms.pauseStart = null;
+    // Reprendre timer — ajuster stepStart pour exclure pause
+    if(ms.stepStart){
+      ms.stepStart = ms.stepStart + pauseDur*1000;
+      if(t) t.stepStart = ms.stepStart;
+    }
+    pushActivity('pause', malId, `${malId} — Reprise après pause`, `Durée pause: ${fmt(pauseDur)} · Cause: ${ms.pauseReason}`);
+    saveState(); renderAll(); startTick();
+  }
+}
+
+function openPauseModal(pk, malId){
+  // Stocker pk/malId pour confirmation
+  window._pausePk = pk;
+  window._pauseMalId = malId;
+
+  const btns = PAUSE_REASONS.map((r,i) =>
+    `<button onclick="selectPauseReason('${r}')" style="width:100%;text-align:left;padding:10px 14px;margin-bottom:6px;border-radius:8px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);cursor:pointer;font-family:'DM Sans',sans-serif;font-size:13px;transition:all .2s" onmouseover="this.style.borderColor='var(--warning)';this.style.color='var(--warning)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--text)'">${r}</button>`
+  ).join('');
+
+  document.getElementById('pauseModalContent').innerHTML = `
+    <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:2px;margin-bottom:14px">MALAXEUR ${malId} — CAUSE DE PAUSE</div>
+    ${btns}
+    <div id="pauseAutreWrap" style="display:none;margin-top:8px">
+      <input id="pauseAutreInput" type="text" placeholder="Décrire la cause..." maxlength="60"
+        style="width:100%;padding:10px 14px;border-radius:8px;border:1px solid var(--citron);background:var(--surface2);color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;outline:none">
+      <button onclick="confirmPause()" style="width:100%;margin-top:8px;padding:10px;border-radius:8px;border:none;background:var(--warning);color:#000;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">⏸ Confirmer la pause</button>
+    </div>
+  `;
+  document.getElementById('pauseModal').classList.add('open');
+}
+
+function selectPauseReason(reason){
+  if(reason === 'Autre'){
+    document.getElementById('pauseAutreWrap').style.display='block';
+    setTimeout(()=>document.getElementById('pauseAutreInput').focus(),100);
+    return;
+  }
+  confirmPause(reason);
+}
+
+function confirmPause(reason){
+  const pk = window._pausePk;
+  const malId = window._pauseMalId;
+  const ms = state[pk]?.malaxeurs[malId];
+  const t = timers[malId];
+  if(!ms) return;
+
+  const cause = reason || document.getElementById('pauseAutreInput')?.value?.trim() || 'Autre';
+  if(!cause){ showToast('⚠ Veuillez saisir la cause de pause'); return; }
+
+  // Geler le timer
+  if(t && t.stepStart!==null){
+    const elapsed = Math.floor((Date.now()-t.stepStart)/1000);
+    if(ms.stepSecs) ms.stepSecs[ms.step]=(ms.stepSecs[ms.step]||0)+elapsed;
+    t.stepStart = null;
+  }
+
+  ms.paused = true;
+  ms.pauseStart = Date.now();
+  ms.pauseReason = cause;
+
+  document.getElementById('pauseModal').classList.remove('open');
+  pushActivity('pause', malId, `${malId} — Pause démarrée`, `Cause: ${cause}`);
+  saveState(); renderAll();
+  if(tickInterval){ clearInterval(tickInterval); tickInterval=null; }
+  // Redémarrer tick si d'autres malaxeurs actifs
+  for(const [p,prod] of Object.entries(PRODUCTS)){
+    for(const m of prod.malaxeurs){
+      if(!m.simple&&state[p].malaxeurs[m.id]?.step>=0&&!state[p].malaxeurs[m.id]?.paused) startTick();
+    }
+  }
+}
+
 function requireOwner(fn){
   return function(...args){
     if(!isOwner){
@@ -1117,7 +1214,7 @@ function restoreTimers(){
       const ms=state[pk]?.malaxeurs[m.id];
       if(!timers[m.id]) timers[m.id]={stepStart:null};
       const t=timers[m.id];
-      if(!dayPaused && ms && ms.step>=0){
+      if(!dayPaused && ms && ms.step>=0 && !ms.paused){
         if(ms.stepStart){
           // Toujours utiliser le timestamp Firebase — source de vérité
           t.stepStart = ms.stepStart;
@@ -1221,7 +1318,7 @@ function initState(){
         state[pk].malaxeurs[m.id]={simple:true,simpleState:'vide',qty:0,dayQty:0,lot:''};
       } else {
         const nSteps=getSteps(pk).length;
-        state[pk].malaxeurs[m.id]={step:-1,qty:0,dayQty:0,targetStock:null,lot:'',stepSecs:new Array(nSteps).fill(0),cycleStart:null,stepStart:null};
+        state[pk].malaxeurs[m.id]={step:-1,qty:0,dayQty:0,targetStock:null,lot:'',stepSecs:new Array(nSteps).fill(0),cycleStart:null,stepStart:null,paused:false,pauseStart:null,pauseReason:'',totalPauseSecs:0};
         timers[m.id]={stepStart:null};
       }
     }
@@ -1256,7 +1353,14 @@ function totalElapsed(malId){
 }
 function currentStepElapsed(malId){
   const t=timers[malId]; if(!t) return 0;
-  return t.stepStart!==null?Math.floor((Date.now()-t.stepStart)/1000):0;
+  if(t.stepStart===null) return 0;
+  // Trouver pk pour accéder à ms.totalPauseSecs
+  let pauseSecs=0;
+  for(const [pk,prod] of Object.entries(PRODUCTS)){
+    const ms=state[pk]?.malaxeurs[malId];
+    if(ms) { pauseSecs=ms.totalPauseSecs||0; break; }
+  }
+  return Math.max(0, Math.floor((Date.now()-t.stepStart)/1000) - pauseSecs);
 }
 function startTick(){
   if(tickInterval) return;
@@ -1391,7 +1495,7 @@ function buildCard(pk,m,ms){
           <div class="qty-label">QUANTITÉ</div>
           <div class="qty-input-wrapper">
             <input type="number" class="qty-input" value="${ms.qty}" min="0" max="${m.max}"
-              onchange="setQty('${pk}','${m.id}',this.value)" onclick="this.select()">
+              onchange="setQty('${pk}','${m.id}',this.value)" onclick="this.select()" ${!dayPaused?'readonly style="opacity:.5;cursor:not-allowed"':''}>
             <span class="qty-unit">T / ${m.max}T</span>
           </div>
         </div>
@@ -1483,13 +1587,19 @@ function buildCard(pk,m,ms){
         <div class="qty-label">QUANTITÉ</div>
         <div class="qty-input-wrapper">
           <input type="number" class="qty-input" value="${ms.qty}" min="0" max="${m.max}"
-            onchange="setQty('${pk}','${m.id}',this.value)" onclick="this.select()">
+            onchange="setQty('${pk}','${m.id}',this.value)" onclick="this.select()" ${!dayPaused?'readonly style="opacity:.5;cursor:not-allowed"':''}>
           <span class="qty-unit">T / ${m.max}T</span>
         </div>
       </div>
       <div class="qty-bar-track"><div class="qty-bar-fill ${col}" style="width:${pct}%"></div></div>
     </div>
     ${step>=0?`<div class="cycle-row"><span class="cycle-label">DURÉE CYCLE</span><span class="cycle-val" id="cycle-${m.id}">${fmt(tot)}</span></div>`:''}
+    ${step>=0&&step<vIdx?`<div style="display:flex;gap:6px;margin-top:7px">
+      <button class="btn-pause-mal${ms.paused?' paused':''}" onclick="togglePauseMal('${pk}','${m.id}')">
+        ${ms.paused?'▶ Reprendre':'⏸ Pause'}
+      </button>
+      ${ms.paused&&ms.pauseReason?`<span class="pause-badge">⏸ ${ms.pauseReason}</span>`:''}
+    </div>`:''}
     <button class="btn-next ${col}" onclick="nextStep('${pk}','${m.id}')">${btnTxt}</button>`;
   return div;
 }
@@ -1558,7 +1668,7 @@ function renderStocks(pk,prod){
       <div class="tank-bottom">
         <div class="tank-qty-row">
           <input type="number" class="tank-input${isEmpty?' empty-input':''}" value="${ss.qty}" min="0" max="${s.max}"
-            onchange="setStockQty('${pk}','${s.id}',this.value)" onclick="this.select()" ${dayPaused||!isOwner?'readonly style=\"opacity:.5;cursor:not-allowed\"':''}>
+            onchange="setStockQty('${pk}','${s.id}',this.value)" onclick="this.select()" ${!dayPaused?'readonly style=\"opacity:.5;cursor:not-allowed\"title=\"Modifiable uniquement à la clôture\"':''}>
           <span class="qty-unit">T</span>
         </div>
         <div class="tank-max">Max: ${s.max}T</div>
@@ -2070,80 +2180,96 @@ function cycleStockMode(pk,stockId){
 
 // ===== CLOSE DAY (keeps state, saves to history) =====
 function cancelCloseDay(){
-  document.getElementById('closeDayModal').style.display = 'none';
+  document.getElementById('closeDayModal').classList.remove('open');
+  // Reprendre les timers si on annule la clôture
+  dayPaused = false;
+  for(const [pk,prod] of Object.entries(PRODUCTS)){
+    for(const m of prod.malaxeurs){
+      if(m.simple) continue;
+      const ms = state[pk]?.malaxeurs[m.id];
+      if(!timers[m.id]) timers[m.id]={stepStart:null};
+      const t = timers[m.id];
+      if(ms && ms.step>=0){
+        const already = ms.stepSecs?.[ms.step]||0;
+        t.stepStart = Date.now() - (already*1000);
+        ms.stepStart = t.stepStart;
+      }
+    }
+  }
+  saveState();
+  renderAll();
+  startTick();
+  showToast('↩ Clôture annulée — timers repris');
 }
 
 let _closeDayCallback = null;
 
 function closeDay(){
-  if(!confirm('Clôturer la journée ? Les quantités peuvent être ajustées.')) return;
-  _doCloseDay();
-}
+  // Pause timers
+  if(tickInterval){ clearInterval(tickInterval); tickInterval=null; }
+  for(const [pk,prod] of Object.entries(PRODUCTS)){
+    for(const m of prod.malaxeurs){
+      if(m.simple) continue;
+      const ms=state[pk]?.malaxeurs[m.id];
+      const t=timers[m.id];
+      if(t&&t.stepStart!==null&&ms?.step>=0){
+        const el=Math.floor((Date.now()-t.stepStart)/1000);
+        if(ms.stepSecs) ms.stepSecs[ms.step]=(ms.stepSecs[ms.step]||0)+el;
+        t.stepStart=null; ms.stepStart=null;
+      }
+    }
+  }
+  dayPaused=true; saveState(); renderAll();
 
-function closeDay_modal(){
-  // Construire modal avec stocks + malaxeurs en vers stock
-  const vsIdxMap = {};
-  for(const [pk] of Object.entries(PRODUCTS)) vsIdxMap[pk] = versStockIdx(pk);
-
-  let html = `<div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);margin-bottom:16px;letter-spacing:1px">SAISIR LES QUANTITÉS FIN DE JOURNÉE</div>`;
-
-  for(const [pk, prod] of Object.entries(PRODUCTS)){
-    const col = pk==='pomme'?'var(--pomme)':pk==='citron'?'var(--citron)':'var(--finesse)';
-    html += `<div style="margin-bottom:20px">`;
-    html += `<div style="font-family:'DM Mono',monospace;font-size:10px;color:${col};letter-spacing:2px;margin-bottom:10px">${prod.name.toUpperCase()}</div>`;
-
-    // Stocks
-    html += `<div style="margin-bottom:8px;font-size:11px;color:var(--dim)">📦 Quantités fin de journée — Stocks</div>`;
+  // Construire modal
+  let html='';
+  for(const [pk,prod] of Object.entries(PRODUCTS)){
+    const col=pk==='pomme'?'var(--pomme)':pk==='citron'?'var(--citron)':'var(--finesse)';
+    html+=`<div style="margin-bottom:18px">
+      <div style="font-size:10px;color:${col};font-family:'DM Mono',monospace;letter-spacing:2px;margin-bottom:8px">${prod.name.toUpperCase()}</div>
+      <div style="font-size:11px;color:var(--dim);margin-bottom:6px">📦 Quantité fin de journée — Stocks</div>`;
     for(const s of prod.stocks){
-      const ss = state[pk].stocks[s.id];
-      html += `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      const ss=state[pk].stocks[s.id];
+      html+=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:5px">
         <span style="font-family:'DM Mono',monospace;font-size:12px;min-width:80px">${s.id}</span>
-        <input type="number" id="close_stock_${pk}_${s.id}" value="${ss.qty||0}" min="0" max="${s.max}" step="0.1"
-          style="width:80px;padding:5px 8px;border-radius:6px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-family:'DM Mono',monospace;font-size:13px;text-align:right">
-        <span style="color:var(--muted);font-size:11px">/ ${s.max}T</span>
+        <input type="number" id="cd_s_${pk}_${s.id}" value="${ss.qty||0}" min="0" max="${s.max}" step="0.1"
+          style="width:75px;padding:4px 8px;border-radius:6px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-family:'DM Mono',monospace;font-size:13px;text-align:right">
+        <span style="color:var(--muted);font-size:10px">/ ${s.max}T</span>
       </div>`;
     }
-
-    // Malaxeurs en vers stock
-    const vsIdx = vsIdxMap[pk];
-    const malVersStock = prod.malaxeurs.filter(m => !m.simple && state[pk]?.malaxeurs[m.id]?.step === vsIdx);
-    if(malVersStock.length > 0){
-      html += `<div style="margin:10px 0 8px;font-size:11px;color:var(--citron)">⚗️ Quantité restante — Malaxeurs en "Vers stock"</div>`;
-      for(const m of malVersStock){
-        const ms = state[pk].malaxeurs[m.id];
-        html += `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+    const vsIdx=versStockIdx(pk);
+    const malVS=prod.malaxeurs.filter(m=>!m.simple&&state[pk]?.malaxeurs[m.id]?.step===vsIdx);
+    if(malVS.length>0){
+      html+=`<div style="font-size:11px;color:var(--citron);margin:8px 0 6px">⚗️ Quantité restante — Malaxeurs en Vers stock</div>`;
+      for(const m of malVS){
+        const ms=state[pk].malaxeurs[m.id];
+        html+=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:5px">
           <span style="font-family:'DM Mono',monospace;font-size:12px;min-width:80px">${m.id}</span>
-          <input type="number" id="close_mal_${pk}_${m.id}" value="${ms.qty||0}" min="0" max="${m.max}" step="0.1"
-            style="width:80px;padding:5px 8px;border-radius:6px;border:1px solid var(--citron);background:var(--surface2);color:var(--citron);font-family:'DM Mono',monospace;font-size:13px;text-align:right">
-          <span style="color:var(--muted);font-size:11px">T restantes</span>
+          <input type="number" id="cd_m_${pk}_${m.id}" value="${ms.qty||0}" min="0" max="${m.max}" step="0.1"
+            style="width:75px;padding:4px 8px;border-radius:6px;border:1px solid var(--citron);background:var(--surface2);color:var(--citron);font-family:'DM Mono',monospace;font-size:13px;text-align:right">
+          <span style="color:var(--muted);font-size:10px">T restantes</span>
         </div>`;
       }
     }
-    html += '</div>';
+    html+='</div>';
   }
-
-  document.getElementById('closeDayContent').innerHTML = html;
-  document.getElementById('closeDayModal').style.display = 'flex';
+  document.getElementById('closeDayContent').innerHTML=html;
+  document.getElementById('closeDayModal').classList.add('open');
 }
 
 function confirmCloseDay(){
-  document.getElementById('closeDayModal').style.display = 'none';
-  // Appliquer valeurs saisies
-
-  // Appliquer les valeurs saisies
-  for(const [pk, prod] of Object.entries(PRODUCTS)){
-    // Stocks
+  document.getElementById('closeDayModal').classList.remove('open');
+  for(const [pk,prod] of Object.entries(PRODUCTS)){
     for(const s of prod.stocks){
-      const inp = document.getElementById(`close_stock_${pk}_${s.id}`);
-      if(inp) state[pk].stocks[s.id].qty = parseFloat(inp.value)||0;
+      const inp=document.getElementById(`cd_s_${pk}_${s.id}`);
+      if(inp) state[pk].stocks[s.id].qty=parseFloat(inp.value)||0;
     }
-    // Malaxeurs en vers stock
-    const vsIdx = versStockIdx(pk);
+    const vsIdx=versStockIdx(pk);
     for(const m of prod.malaxeurs){
       if(m.simple) continue;
-      const ms = state[pk]?.malaxeurs[m.id];
+      const ms=state[pk]?.malaxeurs[m.id];
       if(ms && ms.step === vsIdx){
-        const inp = document.getElementById(`close_mal_${pk}_${m.id}`);
+        const inp = document.getElementById(`cd_m_${pk}_${m.id}`);
         if(inp) ms.qty = parseFloat(inp.value)||0;
       }
     }
@@ -2204,9 +2330,7 @@ function _doCloseDay(){
   history.unshift(snap);
   saveHistory();
   // Marquer la journée en pause (flag local + Firebase)
-  dayPaused = true;
-  saveState(); // dayPaused=true sauvé dans Firebase pour cet atelier
-  renderAll();
+  // dayPaused déjà true, saveState déjà appelé
   pushActivity('system', '—', '✔ Journée clôturée', `par ${currentUser||'—'}`);
   showToast(`✔ Journée clôturée — timers en pause.`);
 }
@@ -2375,9 +2499,11 @@ function renderPresence(users){
   const bar = document.getElementById('presenceBar');
   if(!bar) return;
   if(users.length === 0){ bar.innerHTML = ''; return; }
+  const isMobile = window.innerWidth < 640;
   const avatars = users.map(u => {
     const icon = u.role === 'owner' ? '⚡' : u.role === 'responsable' ? '🟡' : '👁';
-    return `<span class="presence-avatar${u.isMe?' me':''}" title="${u.role==='owner'?'Owner':u.role==='responsable'?'Responsable':'Lecture seule'}">${icon} ${u.name}</span>`;
+    const label = isMobile ? icon : `${icon} ${u.name}`;
+    return `<span class="presence-avatar${u.isMe?' me':''}" title="${u.name} — ${u.role==='owner'?'Owner':u.role==='responsable'?'Responsable':'Lecture seule'}">${label}</span>`;
   }).join('');
   bar.innerHTML = `<span class="presence-dot"></span>${avatars}`;
 }
@@ -2839,7 +2965,7 @@ function installApp(){
 </script>
 
 <!-- MODAL CLÔTURE JOURNÉE -->
-<div class="modal-overlay" id="closeDayModal" style="display:none;z-index:1100;position:fixed">
+<div class="modal-overlay" id="closeDayModal" style="z-index:1100">
   <div class="modal-box" style="max-width:600px;width:95%;max-height:85vh;overflow-y:auto">
     <div class="modal-header">
       <div class="modal-title">✔ Clôture de journée</div>
@@ -2850,6 +2976,17 @@ function installApp(){
       <button onclick="cancelCloseDay()" style="padding:8px 18px;border-radius:8px;border:1px solid var(--border2);background:transparent;color:var(--muted);cursor:pointer;font-family:'DM Sans',sans-serif">Annuler</button>
       <button onclick="confirmCloseDay()" style="padding:8px 18px;border-radius:8px;border:none;background:var(--ok);color:#000;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">✔ Confirmer la clôture</button>
     </div>
+  </div>
+</div>
+
+<!-- MODAL PAUSE MALAXEUR -->
+<div class="modal-overlay" id="pauseModal" style="z-index:1200">
+  <div class="modal-box" style="max-width:400px;width:92%">
+    <div class="modal-header">
+      <div class="modal-title">⏸ Mise en pause</div>
+      <button class="modal-close" onclick="document.getElementById('pauseModal').classList.remove('open')">✕</button>
+    </div>
+    <div id="pauseModalContent" style="padding:16px"></div>
   </div>
 </div>
 </body>
