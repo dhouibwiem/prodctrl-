@@ -165,7 +165,7 @@ window.dispatchEvent(new Event('fbReady'));
   .step-item.completed .step-label{color:var(--dim)}
   .step-timer{font-family:'DM Mono',monospace;font-size:10px;flex-shrink:0;padding:2px 5px;border-radius:4px;min-width:44px;text-align:right}
   .step-timer.idle{color:var(--border2)}
-  .step-timer.active-t{color:var(--ok);background:rgba(90,245,160,.08);border:1px solid rgba(90,245,160,.2);animation:tick-glow 1s infinite}
+  .step-timer.active-t{color:#000;background:var(--ok);border:1px solid var(--ok);font-weight:700;animation:tick-glow 1s infinite}
   @keyframes tick-glow{0%,100%{opacity:1}50%{opacity:.55}}
   .step-timer.done-t{color:var(--dim);background:var(--bg);border:1px solid var(--border)}
 
