@@ -689,6 +689,7 @@ function selectAtelier(atelier){
   document.getElementById('atelierSelectOverlay').style.display = 'none';
   document.getElementById('loginOverlay').style.display = 'flex';
   setTimeout(initBiometricButton, 100);
+  setTimeout(initPinPad, 150);
   setTimeout(()=>document.getElementById('loginInput').focus(), 200);
 }
 
@@ -1140,6 +1141,11 @@ function saveAccessConfig(){
   if(pinB) localStorage.setItem('pc_pin_B', pinB);
   else localStorage.removeItem('pc_pin_B');
 
+  // Partager via Firebase pour tous les appareils
+  if(window._fbReady){
+    window._fbSet('prodctrl_global_codes', {ownerA,ownerB,responsable:resp,pinA:pinA||'',pinB:pinB||''}).catch(()=>{});
+  }
+
   CODES = loadAccessCodes();
   document.getElementById('accessConfigModal').classList.remove('open');
   showToast("✅ Codes d'accès mis à jour");
@@ -1433,6 +1439,18 @@ function mergeDefaults(remoteState){
 }
 
 function startFirebaseSync(){
+  // Charger codes d'accès partagés depuis Firebase
+  window._fbOnValue('prodctrl_global_codes', (remote) => {
+    if(!remote) return;
+    if(remote.ownerA) localStorage.setItem('pc_code_ownerA', remote.ownerA);
+    if(remote.ownerB) localStorage.setItem('pc_code_ownerB', remote.ownerB);
+    if(remote.responsable) localStorage.setItem('pc_code_responsable', remote.responsable);
+    if(remote.pinA) localStorage.setItem('pc_pin_A', remote.pinA);
+    else localStorage.removeItem('pc_pin_A');
+    if(remote.pinB) localStorage.setItem('pc_pin_B', remote.pinB);
+    else localStorage.removeItem('pc_pin_B');
+    CODES = loadAccessCodes();
+  });
   // Listen to state changes from Firebase (real-time sync)
   // Charger transfersOfDay et stockStartOfDay depuis Firebase
   window._fbOnValue(FB_PATH+'/transfersOfDay', (data) => {
@@ -1669,7 +1687,7 @@ function buildCard(pk,m,ms){
           <div class="qty-label">QUANTITÉ</div>
           <div class="qty-input-wrapper">
             <input type="number" class="qty-input" value="${ms.qty}" min="0" max="${m.max}"
-              onchange="setQty('${pk}','${m.id}',this.value)" onclick="this.select()" ${!dayPaused?'readonly style="opacity:.5;cursor:not-allowed"':''}>
+              onchange="setQty('${pk}','${m.id}',this.value)" onclick="this.select()" ${(!dayPaused && currentAtelier==='A')?'readonly style="opacity:.5;cursor:not-allowed"':''}>
             <span class="qty-unit">T / ${m.max}T</span>
           </div>
         </div>
@@ -1761,7 +1779,7 @@ function buildCard(pk,m,ms){
         <div class="qty-label">QUANTITÉ</div>
         <div class="qty-input-wrapper">
           <input type="number" class="qty-input" value="${ms.qty}" min="0" max="${m.max}"
-            onchange="setQty('${pk}','${m.id}',this.value)" onclick="this.select()" ${!dayPaused?'readonly style="opacity:.5;cursor:not-allowed"':''}>
+            onchange="setQty('${pk}','${m.id}',this.value)" onclick="this.select()" ${(!dayPaused && currentAtelier==='A')?'readonly style="opacity:.5;cursor:not-allowed"':''}>
           <span class="qty-unit">T / ${m.max}T</span>
         </div>
       </div>
@@ -1842,7 +1860,7 @@ function renderStocks(pk,prod){
       <div class="tank-bottom">
         <div class="tank-qty-row">
           <input type="number" class="tank-input${isEmpty?' empty-input':''}" value="${ss.qty}" min="0" max="${s.max}"
-            onchange="setStockQty('${pk}','${s.id}',this.value)" onclick="this.select()" ${!dayPaused?'readonly style=\"opacity:.5;cursor:not-allowed\"title=\"Modifiable uniquement à la clôture\"':''}>
+            onchange="setStockQty('${pk}','${s.id}',this.value)" onclick="this.select()" ${(!dayPaused && currentAtelier==='A')?'readonly style=\"opacity:.5;cursor:not-allowed\"title=\"Modifiable uniquement à la clôture\"':''}>
           <span class="qty-unit">T</span>
         </div>
         <div class="tank-max">Max: ${s.max}T</div>
