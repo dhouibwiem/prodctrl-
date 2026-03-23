@@ -426,6 +426,11 @@ window.dispatchEvent(new Event('fbReady'));
       oninput="document.getElementById('loginHint').textContent='';this.classList.remove('error')">
     <div class="login-hint" id="loginHint"></div>
     <button class="btn-login-owner" onclick="tryLogin()">▶ Continuer</button>
+    <div id="pinSection" style="display:none;margin-top:12px">
+      <div class="login-divider">ou entrer le PIN Owner</div>
+      <div style="display:flex;gap:8px;justify-content:center;margin:10px 0" id="pinDots"></div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:220px;margin:0 auto" id="pinPad"></div>
+    </div>
     <button id="btnRegisterBiometric" onclick="registerBiometric()" style="display:none;margin-top:8px;width:100%;padding:8px;border-radius:8px;border:1px solid var(--border2);background:transparent;color:var(--muted);font-family:'DM Mono',monospace;font-size:10px;cursor:pointer;letter-spacing:1px">⚙ Enregistrer empreinte/visage</button>
   </div>
 </div>
@@ -462,6 +467,7 @@ window.dispatchEvent(new Event('fbReady'));
     <button class="btn-hd btn-new-day" onclick="newDay()">🌅 Nouvelle J.</button>
     <button id="btnReinit" class="btn-hd btn-reset" onclick="resetDay()">↺ Réinit.</button>
     <button id="btnClearHistory" class="btn-hd btn-reset" onclick="clearHistory()" style="display:none;opacity:.8">🗑 Hist.</button>
+    <button id="btnAccessConfig" class="btn-hd" onclick="openAccessConfig()" style="display:none;background:rgba(160,120,245,.1);border-color:rgba(160,120,245,.3);color:#a078f5">⚙ Accès</button>
     <button id="btnInstall" onclick="installApp()" style="display:none;background:rgba(111,207,90,.12);border:1px solid rgba(111,207,90,.3);color:var(--ok);font-size:10px;padding:4px 9px;border-radius:6px;cursor:pointer">⬇</button>
   </div>
 </header>
@@ -582,8 +588,19 @@ window.dispatchEvent(new Event('fbReady'));
 <div class="toast" id="toast"></div>
 <script>
 // ===== ACCESS CONTROL =====
-const ACCESS_CODES = {A:'ATELIERA2026', B:'ATELIERB2026'};
-const RESPONSABLE_CODE = 'RESPONSABLE';
+// Codes d'accès — modifiables via le panneau Responsable
+function loadAccessCodes(){
+  return {
+    ownerA:       localStorage.getItem('pc_code_ownerA')       || 'ATELIERA2026',
+    ownerB:       localStorage.getItem('pc_code_ownerB')       || 'ATELIERB2026',
+    responsable:  localStorage.getItem('pc_code_responsable')  || 'RESPONSABLE',
+    pinA:         localStorage.getItem('pc_pin_A')             || '',
+    pinB:         localStorage.getItem('pc_pin_B')             || ''
+  };
+}
+let CODES = loadAccessCodes();
+const ACCESS_CODES = { get A(){ return CODES.ownerA; }, get B(){ return CODES.ownerB; } };
+const RESPONSABLE_CODE = null; // dynamique via CODES.responsable
 let isOwner = false;
 
 function toggleTheme(){
@@ -683,7 +700,7 @@ function restoreSession(){
     if(!s.name || !s.atelier || !s.role) return false;
     // Vérifier que le code est toujours valide
     if(s.role === 'owner' && s.code !== ACCESS_CODES[s.atelier]) return false;
-    if(s.role === 'responsable' && s.code !== RESPONSABLE_CODE) return false;
+    if(s.role === 'responsable' && s.code !== CODES.responsable) return false;
 
     // Restaurer les variables
     currentUser  = s.name;
@@ -770,8 +787,10 @@ function bioSupported(){
 }
 
 async function checkBiometricAvailable(){
-  if(!bioSupported()) return false;
   try {
+    if(!window.PublicKeyCredential) return false;
+    if(!window.isSecureContext) return false; // HTTPS requis
+    if(typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable !== 'function') return false;
     return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
   } catch(e){ return false; }
 }
@@ -784,7 +803,15 @@ async function initBiometricButton(){
   const divBio = document.getElementById('biometricDivider');
   const btnReg = document.getElementById('btnRegisterBiometric');
   if(!btnBio) return;
-  const supported = await checkBiometricAvailable();
+
+  // Vérifier HTTPS
+  if(!window.isSecureContext){
+    btnBio.style.display = 'none';
+    if(btnReg) btnReg.style.display = 'none';
+    return;
+  }
+
+  const supported = await checkBiometricAvailable().catch(()=>false);
   if(supported && stored){
     btnBio.style.display = 'block';
     if(divBio) divBio.style.display = 'flex';
@@ -794,7 +821,9 @@ async function initBiometricButton(){
     if(divBio) divBio.style.display = 'none';
     if(btnReg) btnReg.style.display = 'block';
   } else {
+    // Non supporté → cacher silencieusement
     btnBio.style.display = 'none';
+    if(divBio) divBio.style.display = 'none';
     if(btnReg) btnReg.style.display = 'none';
   }
 }
@@ -837,6 +866,14 @@ async function loginWithBiometric(){
   const stored = localStorage.getItem(key);
   if(!stored){ showToast('Aucune empreinte enregistrée'); return; }
   const credData = JSON.parse(stored);
+
+  // Vérifier support avant tout
+  const supported = await checkBiometricAvailable().catch(()=>false);
+  if(!supported){
+    _fallbackToCode('⚠ Biométrie non disponible sur cet appareil');
+    return;
+  }
+
   try {
     const challenge = new Uint8Array(32);
     crypto.getRandomValues(challenge);
@@ -848,7 +885,7 @@ async function loginWithBiometric(){
       timeout: 60000
     }});
 
-    // Auth réussie — appliquer le rôle enregistré
+    // Auth réussie
     if(credData.role === 'responsable'){
       setResponsableMode();
     } else {
@@ -856,18 +893,82 @@ async function loginWithBiometric(){
     }
     showToast('✅ Authentification biométrique réussie');
   } catch(e){
-    if(e.name !== 'NotAllowedError')
-      showToast('⚠ Échec biométrie : ' + e.message);
+    if(e.name === 'NotAllowedError'){
+      // Utilisateur a annulé — ne rien faire
+    } else if(e.name === 'InvalidStateError' || e.name === 'NotSupportedError'){
+      // Credential invalide ou non supporté → supprimer et fallback
+      localStorage.removeItem(key);
+      _fallbackToCode('⚠ Empreinte non reconnue — veuillez entrer votre code');
+    } else {
+      // Autre erreur → fallback silencieux vers code
+      _fallbackToCode('⚠ Biométrie échouée — entrez votre code');
+    }
   }
 }
 
+function _fallbackToCode(msg){
+  // Cacher bouton biométrie, afficher champ code, montrer message
+  const btnBio = document.getElementById('btnBiometric');
+  const divBio = document.getElementById('biometricDivider');
+  if(btnBio) btnBio.style.display='none';
+  if(divBio) divBio.style.display='none';
+  showToast(msg);
+  setTimeout(()=>{
+    const inp = document.getElementById('loginInput');
+    if(inp) inp.focus();
+  }, 300);
+}
+
 let _lastLoginRole = 'owner';
+
+let _pinInput = '';
+
+function initPinPad(){
+  CODES = loadAccessCodes();
+  const pin = currentAtelier === 'A' ? CODES.pinA : CODES.pinB;
+  const pinSection = document.getElementById('pinSection');
+  if(!pin || pin.length !== 4){ if(pinSection) pinSection.style.display='none'; return; }
+  if(pinSection) pinSection.style.display='block';
+  _pinInput = '';
+  renderPinDots();
+  const pad = document.getElementById('pinPad');
+  if(!pad) return;
+  const keys = ['1','2','3','4','5','6','7','8','9','','0','⌫'];
+  pad.innerHTML = keys.map(k => k===''?'<div></div>':`
+    <button onclick="pinKey('${k}')" style="padding:12px;border-radius:8px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-size:18px;font-family:'DM Mono',monospace;cursor:pointer;transition:all .2s" onmouseover="this.style.background='var(--border2)'" onmouseout="this.style.background='var(--surface2)'">${k}</button>
+  `).join('');
+}
+
+function renderPinDots(){
+  const el = document.getElementById('pinDots');
+  if(!el) return;
+  el.innerHTML = [0,1,2,3].map(i =>
+    `<div style="width:14px;height:14px;border-radius:50%;border:2px solid var(--border2);background:${i<_pinInput.length?'var(--ok)':'transparent'};transition:all .2s"></div>`
+  ).join('');
+}
+
+function pinKey(k){
+  if(k==='⌫'){ _pinInput=_pinInput.slice(0,-1); renderPinDots(); return; }
+  if(_pinInput.length>=4) return;
+  _pinInput+=k;
+  renderPinDots();
+  if(_pinInput.length===4){
+    const pin = currentAtelier==='A'?CODES.pinA:CODES.pinB;
+    if(_pinInput===pin){
+      setOwnerMode();
+    } else {
+      document.getElementById('loginHint').textContent='❌ PIN incorrect';
+      document.getElementById('loginHint').className='login-hint err';
+      setTimeout(()=>{ _pinInput=''; renderPinDots(); document.getElementById('loginHint').textContent=''; },800);
+    }
+  }
+}
 
 function tryLogin(){
   const val = document.getElementById('loginInput').value.trim();
   if(val === ACCESS_CODES[currentAtelier]){
     setOwnerMode();
-  } else if(val === RESPONSABLE_CODE){
+  } else if(val === CODES.responsable){
     setResponsableMode();
   } else {
     const inp = document.getElementById('loginInput');
@@ -912,7 +1013,8 @@ function applyModeButtons(){
     btnStatistiques  : isResp || isViewer,
     btnActivite      : isResp,
     btnReinit        : isResp,
-    btnClearHistory  : isResp
+    btnClearHistory  : isResp,
+    btnAccessConfig  : isResp
   };
   Object.entries(vis).forEach(([id,show])=>{
     const el=document.getElementById(id);
@@ -974,6 +1076,73 @@ function openNeutreConfig(){
   document.getElementById('neutreMinLabel').textContent = n;
   localStorage.setItem('prodctrl_neutreMin', n);
   showToast(`✅ Seuil neutralisation : ${n} min`);
+}
+
+// ===== CONFIG ACCÈS =====
+function openAccessConfig(){
+  CODES = loadAccessCodes();
+  document.getElementById('accessConfigContent').innerHTML = `
+    <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:1px;margin-bottom:16px">MODIFIER LES CODES D'ACCÈS</div>
+
+    <div style="margin-bottom:18px">
+      <div style="font-size:10px;color:var(--pomme);font-family:'DM Mono',monospace;letter-spacing:2px;margin-bottom:10px">ATELIER A</div>
+      <div style="margin-bottom:8px">
+        <label style="font-size:11px;color:var(--dim);display:block;margin-bottom:4px">Mot de passe Owner A</label>
+        <input id="cfg_ownerA" type="text" value="${CODES.ownerA}" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-family:'DM Mono',monospace;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--dim);display:block;margin-bottom:4px">PIN Owner A (4 chiffres)</label>
+        <input id="cfg_pinA" type="text" value="${CODES.pinA}" maxlength="4" pattern="[0-9]*" inputmode="numeric" placeholder="Ex: 1234" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-family:'DM Mono',monospace;font-size:13px;letter-spacing:6px">
+      </div>
+    </div>
+
+    <div style="margin-bottom:18px">
+      <div style="font-size:10px;color:var(--finesse);font-family:'DM Mono',monospace;letter-spacing:2px;margin-bottom:10px">ATELIER B</div>
+      <div style="margin-bottom:8px">
+        <label style="font-size:11px;color:var(--dim);display:block;margin-bottom:4px">Mot de passe Owner B</label>
+        <input id="cfg_ownerB" type="text" value="${CODES.ownerB}" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-family:'DM Mono',monospace;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--dim);display:block;margin-bottom:4px">PIN Owner B (4 chiffres)</label>
+        <input id="cfg_pinB" type="text" value="${CODES.pinB}" maxlength="4" pattern="[0-9]*" inputmode="numeric" placeholder="Ex: 5678" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-family:'DM Mono',monospace;font-size:13px;letter-spacing:6px">
+      </div>
+    </div>
+
+    <div style="margin-bottom:8px">
+      <div style="font-size:10px;color:var(--citron);font-family:'DM Mono',monospace;letter-spacing:2px;margin-bottom:10px">MODE RESPONSABLE</div>
+      <label style="font-size:11px;color:var(--dim);display:block;margin-bottom:4px">Mot de passe Responsable</label>
+      <input id="cfg_responsable" type="text" value="${CODES.responsable}" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-family:'DM Mono',monospace;font-size:13px">
+    </div>
+
+    <div style="padding:10px;background:rgba(245,165,66,.08);border-radius:6px;border:1px solid rgba(245,165,66,.2);font-size:11px;color:var(--warning);margin-top:12px">
+      ⚠ Les modifications sont enregistrées localement sur cet appareil. Communiquer les nouveaux codes aux utilisateurs.
+    </div>
+  `;
+  document.getElementById('accessConfigModal').classList.add('open');
+}
+
+function saveAccessConfig(){
+  const ownerA = document.getElementById('cfg_ownerA')?.value?.trim();
+  const ownerB = document.getElementById('cfg_ownerB')?.value?.trim();
+  const resp   = document.getElementById('cfg_responsable')?.value?.trim();
+  const pinA   = document.getElementById('cfg_pinA')?.value?.trim();
+  const pinB   = document.getElementById('cfg_pinB')?.value?.trim();
+
+  if(!ownerA||!ownerB||!resp){ showToast('⚠ Les mots de passe ne peuvent pas être vides'); return; }
+  if(pinA && (pinA.length!==4||!/^\d+$/.test(pinA))){ showToast('⚠ PIN A : 4 chiffres exactement'); return; }
+  if(pinB && (pinB.length!==4||!/^\d+$/.test(pinB))){ showToast('⚠ PIN B : 4 chiffres exactement'); return; }
+
+  localStorage.setItem('pc_code_ownerA', ownerA);
+  localStorage.setItem('pc_code_ownerB', ownerB);
+  localStorage.setItem('pc_code_responsable', resp);
+  if(pinA) localStorage.setItem('pc_pin_A', pinA);
+  else localStorage.removeItem('pc_pin_A');
+  if(pinB) localStorage.setItem('pc_pin_B', pinB);
+  else localStorage.removeItem('pc_pin_B');
+
+  CODES = loadAccessCodes();
+  document.getElementById('accessConfigModal').classList.remove('open');
+  showToast("✅ Codes d'accès mis à jour");
 }
 
 // ===== PAUSE MALAXEUR =====
@@ -3066,6 +3235,21 @@ function installApp(){
     <div style="padding:0 16px 16px;display:flex;gap:10px;justify-content:flex-end">
       <button onclick="document.getElementById('undoSelectModal').classList.remove('open')" style="padding:8px 18px;border-radius:8px;border:1px solid var(--border2);background:transparent;color:var(--muted);cursor:pointer;font-family:'DM Sans',sans-serif">Annuler</button>
       <button onclick="confirmUndoStep()" style="padding:8px 18px;border-radius:8px;border:none;background:var(--danger);color:#fff;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">↩ Confirmer</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL CONFIG ACCÈS -->
+<div class="modal-overlay" id="accessConfigModal" style="z-index:1200">
+  <div class="modal-box" style="max-width:480px;width:92%;max-height:85vh;overflow-y:auto">
+    <div class="modal-header">
+      <div class="modal-title">⚙ Configuration des accès</div>
+      <button class="modal-close" onclick="document.getElementById('accessConfigModal').classList.remove('open')">✕</button>
+    </div>
+    <div id="accessConfigContent" style="padding:16px"></div>
+    <div style="padding:0 16px 16px;display:flex;gap:10px;justify-content:flex-end">
+      <button onclick="document.getElementById('accessConfigModal').classList.remove('open')" style="padding:8px 18px;border-radius:8px;border:1px solid var(--border2);background:transparent;color:var(--muted);cursor:pointer;font-family:'DM Sans',sans-serif">Fermer</button>
+      <button onclick="saveAccessConfig()" style="padding:8px 18px;border-radius:8px;border:none;background:#a078f5;color:#fff;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">💾 Enregistrer</button>
     </div>
   </div>
 </div>
