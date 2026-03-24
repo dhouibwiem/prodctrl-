@@ -1,7 +1,10 @@
-<!DOCTYPE html>
+<!DOCTYPE html><!-- build:1774344306 -->
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -1171,14 +1174,14 @@ function togglePauseMal(pk, malId){
   } else {
     // Reprendre → calculer durée pause
     const pauseDur = ms.pauseStart ? Math.floor((Date.now() - ms.pauseStart)/1000) : 0;
-    ms.totalPauseSecs = (ms.totalPauseSecs||0) + pauseDur;
     ms.paused = false;
     ms.pauseStart = null;
-    // Reprendre timer — ajuster stepStart pour exclure pause
-    if(ms.stepStart){
-      ms.stepStart = ms.stepStart + pauseDur*1000;
-      if(t) t.stepStart = ms.stepStart;
-    }
+    ms.totalPauseSecs = 0;
+    // Repartir avec un nouveau stepStart = maintenant
+    // stepSecs[step] garde déjà le temps accumulé avant la pause
+    const newStart = Date.now();
+    ms.stepStart = newStart;
+    if(t) t.stepStart = newStart;
     pushActivity('pause', malId, `${malId} — Reprise après pause`, `Durée pause: ${fmt(pauseDur)} · Cause: ${ms.pauseReason}`);
     saveState(); renderAll(); startTick();
   }
@@ -1224,11 +1227,15 @@ function confirmPause(reason){
   const cause = reason || document.getElementById('pauseAutreInput')?.value?.trim() || 'Autre';
   if(!cause){ showToast('⚠ Veuillez saisir la cause de pause'); return; }
 
-  // Geler le timer
+  // Geler le timer — accumuler le temps dans stepSecs SANS compter la pause
   if(t && t.stepStart!==null){
     const elapsed = Math.floor((Date.now()-t.stepStart)/1000);
-    if(ms.stepSecs) ms.stepSecs[ms.step]=(ms.stepSecs[ms.step]||0)+elapsed;
+    const alreadyPaused = ms.totalPauseSecs||0;
+    const realElapsed = Math.max(0, elapsed - alreadyPaused);
+    if(ms.stepSecs) ms.stepSecs[ms.step]=(ms.stepSecs[ms.step]||0)+realElapsed;
     t.stepStart = null;
+    ms.stepStart = null;
+    ms.totalPauseSecs = 0; // reset pour cet arrêt
   }
 
   ms.paused = true;
@@ -1546,13 +1553,13 @@ function totalElapsed(malId){
 function currentStepElapsed(malId){
   const t=timers[malId]; if(!t) return 0;
   if(t.stepStart===null) return 0;
-  // Trouver pk pour accéder à ms.totalPauseSecs
-  let pauseSecs=0;
+  // Temps depuis reprise + temps accumulé avant pause (dans stepSecs)
+  let accumulated=0;
   for(const [pk,prod] of Object.entries(PRODUCTS)){
     const ms=state[pk]?.malaxeurs[malId];
-    if(ms) { pauseSecs=ms.totalPauseSecs||0; break; }
+    if(ms && ms.step>=0) { accumulated=ms.stepSecs?.[ms.step]||0; break; }
   }
-  return Math.max(0, Math.floor((Date.now()-t.stepStart)/1000) - pauseSecs);
+  return accumulated + Math.floor((Date.now()-t.stepStart)/1000);
 }
 function startTick(){
   if(tickInterval) return;
