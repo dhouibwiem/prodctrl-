@@ -449,7 +449,7 @@ window.dispatchEvent(new Event('fbReady'));
   <div class="header-left" style="flex-shrink:0">
     <div class="logo-block">
       <div class="logo">PROD<span>.</span>CTRL</div>
-      <div style="font-family:'DM Mono',monospace;font-size:7px;color:var(--muted);letter-spacing:1px">v1.5</div>
+      <div style="font-family:'DM Mono',monospace;font-size:7px;color:var(--muted);letter-spacing:1px">v1.9.1</div>
       <div class="atelier-tag" id="atelierTag">ATELIER A</div>
     </div>
     <div class="header-date" id="dateDisplay"></div>
@@ -468,7 +468,7 @@ window.dispatchEvent(new Event('fbReady'));
     <button id="btnStatistiques" class="btn-hd" onclick="openConsommation()" style="background:rgba(245,200,66,.1);border-color:rgba(245,200,66,.3);color:var(--citron)">📊 Stats</button>
     <button id="btnActivite" class="btn-hd btn-hist" onclick="openActivityLog()" style="background:rgba(90,180,245,.1);border-color:rgba(90,180,245,.3);color:#5ab4f5">📜 Activité</button>
     <button class="btn-hd btn-close-day" onclick="closeDay()">✔ Clôturer</button>
-    <button class="btn-hd btn-new-day" onclick="newDay()">🌅 Nouvelle J.</button>
+    <button id="btnNouvelleJ" class="btn-hd btn-new-day" onclick="newDay()">🌅 Nouvelle J.</button>
     <button id="btnReinit" class="btn-hd btn-reset" onclick="resetDay()">↺ Réinit.</button>
     <button id="btnClearHistory" class="btn-hd btn-reset" onclick="clearHistory()" style="display:none;opacity:.8">🗑 Hist.</button>
     <button id="btnAccessConfig" class="btn-hd" onclick="openAccessConfig()" style="display:none;background:rgba(160,120,245,.1);border-color:rgba(160,120,245,.3);color:#a078f5">⚙ Accès</button>
@@ -537,9 +537,9 @@ window.dispatchEvent(new Event('fbReady'));
 </main>
 
 <div class="modal-overlay" id="histModal" onclick="if(event.target===this)closeHistory()">
-  <div class="modal">
+  <div class="modal" style="max-width:1100px;width:96%">
     <div class="modal-header">
-      <div class="modal-title">HISTORIQUE — ATELIER A</div>
+      <div class="modal-title">📋 HISTORIQUE BILANS — ATELIER <span id="histModalAtelierTag">A</span></div>
       <button class="modal-close" onclick="closeHistory()">✕</button>
     </div>
     <div class="modal-body" id="histBody"></div>
@@ -1017,7 +1017,9 @@ function applyModeButtons(){
     btnHistoire      : isResp || isViewer,
     btnStatistiques  : isResp || isViewer,
     btnActivite      : isResp,
+    // Réinit. uniquement Responsable — Nouvelle J. accessible Owner ET Responsable
     btnReinit        : isResp,
+    btnNouvelleJ     : isOwner || isResp,
     btnClearHistory  : isResp,
     btnAccessConfig  : isResp
   };
@@ -1364,7 +1366,7 @@ function pushActivity(type, malId, what, detail){
     date: dateNow()
   };
   activityLog.unshift(entry);
-  if(activityLog.length > 500) activityLog.pop(); // garder 500 max
+  if(activityLog.length > 10000) activityLog.pop(); // garder 10000 max (environ 1 an)
   saveActivityLog();
   // Mise à jour live si modal ouvert
   if(document.getElementById('activityModal').classList.contains('open')) renderActivityLog();
@@ -1372,7 +1374,8 @@ function pushActivity(type, malId, what, detail){
 
 function saveActivityLog(){
   if(!window._fbReady) return;
-  const clean = JSON.parse(JSON.stringify(activityLog.slice(0,200)));
+  // Sauvegarder jusqu'à 10000 entrées — pas de slice pour garder tout l'historique
+  const clean = JSON.parse(JSON.stringify(activityLog.slice(0,10000)));
   window._fbSet(FB_PATH+'/activityLog', clean).catch(e=>console.warn('FB act err',e));
 }
 
@@ -1428,10 +1431,13 @@ function mergeDefaults(remoteState){
     for(const m of prod.malaxeurs){
       if(!remoteState[pk].malaxeurs[m.id]){
         if(m.simple) remoteState[pk].malaxeurs[m.id]={simple:true,simpleState:'vide',qty:0,dayQty:0,lot:''};
-        else remoteState[pk].malaxeurs[m.id]={step:-1,qty:0,dayQty:0,targetStock:null,lot:''};
+        else remoteState[pk].malaxeurs[m.id]={step:-1,qty:0,dayQty:0,targetStock:null,lot:'',lotTransferred:false,lotTransferredTo:''};
       }
       if(remoteState[pk].malaxeurs[m.id].lot===undefined) remoteState[pk].malaxeurs[m.id].lot='';
       if(!m.simple){
+        // Initialiser lotTransferred si absent (rétrocompatibilité)
+        if(remoteState[pk].malaxeurs[m.id].lotTransferred === undefined) remoteState[pk].malaxeurs[m.id].lotTransferred = false;
+        if(remoteState[pk].malaxeurs[m.id].lotTransferredTo === undefined) remoteState[pk].malaxeurs[m.id].lotTransferredTo = '';
         const nSteps=getSteps(pk).length;
         const ms=remoteState[pk].malaxeurs[m.id];
         if(!ms.stepSecs||!Array.isArray(ms.stepSecs)) ms.stepSecs=new Array(nSteps).fill(0);
@@ -1741,34 +1747,62 @@ function buildCard(pk,m,ms){
   let versStockHtml='';
   if(pk==='finesse'&&step===vsIdx){
     const isB = currentAtelier === 'B';
+    const currentLot = (ms.lot||'').trim();
+    const alreadyTransferred = ms.lotTransferred === true;
+    const transferredTo = ms.lotTransferredTo || '';
+
     const stockBtns=PRODUCTS.finesse.stocks.map(s=>{
       const sel=ms.targetStock===s.id;
       const sss=state['finesse'].stocks[s.id];
       const sMax = s.max || 17;
-      const occupied = isB ? (sss&&(sss.qty||0)>=sMax) : (sss&&(sss.qty||0)>0);
-      const onclick=occupied
-        ? `showToast('⛔ ${s.id} plein — videz avant')`
-        : `setTargetStock('${m.id}','${s.id}')`;
-      return `<button class="stock-btn${sel?' selected':''}" style="${occupied?'opacity:.4;cursor:not-allowed;':''}" onclick="${onclick}">${s.id}${occupied?' 🔒':''}</button>`;
+      const isFull = isB ? (sss&&(sss.qty||0)>=sMax) : (sss&&(sss.qty||0)>0);
+      const isTransferredHere = alreadyTransferred && transferredTo === s.id;
+
+      let onclick, lockIcon, styleExtra='';
+      if(alreadyTransferred){
+        // Lot déjà envoyé → tous les stocks bloqués
+        onclick = `showToast('⛔ Lot #${currentLot} déjà envoyé vers ${transferredTo} — annulez l\\'étape pour recommencer')`;
+        lockIcon = isTransferredHere ? ' ✅' : ' 🔒';
+        styleExtra = 'opacity:.4;cursor:not-allowed;';
+      } else if(isFull){
+        onclick = `showToast('⛔ ${s.id} plein — videz avant')`;
+        lockIcon = ' 🔒';
+        styleExtra = 'opacity:.4;cursor:not-allowed;';
+      } else {
+        onclick = `setTargetStock('${m.id}','${s.id}')`;
+        lockIcon = '';
+        styleExtra = '';
+      }
+      return `<button class="stock-btn${sel?' selected':''}" style="${styleExtra}" onclick="${onclick}">${s.id}${lockIcon}</button>`;
     }).join('');
+
     let cm6Btn='';
     if(!isB){
       const cm6ms=state['finesse'].malaxeurs['CM6'];
       const cm6Occupied=cm6ms&&(cm6ms.qty||0)>0;
       const cm6Sel=ms.targetStock==='CM6';
-      const cm6Onclick=cm6Occupied
-        ? `showToast('⛔ CM6 occupé — videz avant')`
+      const cm6Blocked = alreadyTransferred || cm6Occupied;
+      const cm6Onclick = cm6Blocked
+        ? (alreadyTransferred ? `showToast('⛔ Lot #${currentLot} déjà envoyé vers ${transferredTo}')` : `showToast('⛔ CM6 occupé — videz avant')`)
         : `setTargetStock('${m.id}','CM6')`;
-      cm6Btn=`<button class="stock-btn${cm6Sel?' selected':''}" style="${cm6Occupied?'opacity:.4;cursor:not-allowed;background:rgba(245,180,50,.08);border-color:rgba(245,180,50,.3);':'background:rgba(245,180,50,.08);border-color:rgba(245,180,50,.4);color:#f5b432;'}" onclick="${cm6Onclick}">CM6${cm6Occupied?' 🔒':''}</button>`;
+      cm6Btn=`<button class="stock-btn${cm6Sel?' selected':''}" style="${cm6Blocked?'opacity:.4;cursor:not-allowed;':''}background:rgba(245,180,50,.08);border-color:rgba(245,180,50,.4);color:#f5b432;" onclick="${cm6Onclick}">CM6${cm6Blocked?(alreadyTransferred&&transferredTo==='CM6'?' ✅':' 🔒'):''}</button>`;
     }
+
+    const transferedInfo = alreadyTransferred
+      ? `<div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--ok);margin-top:6px;padding:4px 8px;background:rgba(90,245,160,.08);border-radius:5px;border:1px solid rgba(90,245,160,.2)">✅ Lot #${currentLot} envoyé → ${transferredTo} — Cliquez Étape suivante</div>`
+      : '';
+
     versStockHtml=`<div class="vers-stock-selector">
       <div class="vers-stock-label">DESTINATION STOCK</div>
       <div class="stock-btns">${stockBtns}${cm6Btn}</div>
+      ${transferedInfo}
     </div>`;
   }
 
   const vIdx=videIdx(pk);
   const btnTxt=step===-1?'▶ Démarrer':step>=vIdx?'↺ Nouveau batch':`Étape suivante (${step+1}/${steps.length-2}) →`;
+  // Double-clic confirmation : data-confirm-pending et timeout reset
+  const btnNextId = `btn-next-${m.id}`;
   div.className=`malaxeur-card ${col}${step===-1?' card-vide':''}`;
   div.id=`card-${m.id}`;
   div.innerHTML=`
@@ -1800,7 +1834,7 @@ function buildCard(pk,m,ms){
       </button>
       ${ms.paused&&ms.pauseReason?`<span class="pause-badge">⏸ ${ms.pauseReason}</span>`:''}
     </div>`:''}
-    <button class="btn-next ${col}" onclick="nextStep('${pk}','${m.id}')">${btnTxt}</button>`;
+    <button id="${btnNextId}" class="btn-next ${col}" onclick="confirmNextStep(this,'${pk}','${m.id}')">${btnTxt}</button>`;
   return div;
 }
 
@@ -2140,6 +2174,38 @@ function setStep(pk,malId,idx){
 
 function undoStep(pk,malId){} // kept for compatibility
 
+// ===== DOUBLE-CLIC CONFIRMATION pour Démarrer / Étape suivante =====
+const _btnConfirmTimers = {};
+
+function confirmNextStep(btn, pk, malId){
+  const key = `${pk}_${malId}`;
+  if(_btnConfirmTimers[key]){
+    // 2ème clic dans le délai → exécuter
+    clearTimeout(_btnConfirmTimers[key]);
+    delete _btnConfirmTimers[key];
+    btn.style.background = '';
+    btn.style.borderColor = '';
+    btn.textContent = btn.dataset.origTxt || btn.textContent;
+    nextStep(pk, malId);
+  } else {
+    // 1er clic → demander confirmation
+    const orig = btn.textContent;
+    btn.dataset.origTxt = orig;
+    btn.style.background = 'rgba(245,200,66,0.25)';
+    btn.style.borderColor = 'var(--citron)';
+    btn.style.color = 'var(--citron)';
+    btn.textContent = '⚠️ Confirmer ?  (re-cliquer)';
+    _btnConfirmTimers[key] = setTimeout(()=>{
+      // Timeout → annuler
+      delete _btnConfirmTimers[key];
+      btn.style.background = '';
+      btn.style.borderColor = '';
+      btn.style.color = '';
+      btn.textContent = orig;
+    }, 3000); // 3 secondes pour confirmer
+  }
+}
+
 function nextStep(pk,malId){
   pushUndo();
   const ms=state[pk].malaxeurs[malId];
@@ -2159,6 +2225,24 @@ function nextStep(pk,malId){
     return;
   }
 
+  // ⚠️ FIX LOT DUPLIQUÉ : bloquer si le lot a déjà été transféré — uniquement dans le même produit (pk)
+  const lotCurrent = (ms.lot||'').trim();
+  if(lotCurrent && ms.step === vsIdx - 1){
+    // Vérifier uniquement dans le même produit — pas inter-produits (pomme/citron peuvent avoir le même N°)
+    for(const m of PRODUCTS[pk].malaxeurs){
+      if(m.id === malId) continue;
+      const otherMs = state[pk]?.malaxeurs[m.id];
+      if(otherMs && otherMs.lot === lotCurrent && otherMs.lotTransferred){
+        showToast(`⛔ Lot #${lotCurrent} déjà transféré par ${m.id} (${PRODUCTS[pk].name})`);
+        return;
+      }
+      if(otherMs && otherMs.lot === lotCurrent && otherMs.step === vsIdx){
+        showToast(`⛔ Lot #${lotCurrent} déjà en cours de transfert sur ${m.id}`);
+        return;
+      }
+    }
+  }
+
   const vIdx2=videIdx(pk);
   if(ms.step>=vIdx2){
     const tot=totalElapsed(malId);
@@ -2166,7 +2250,9 @@ function nextStep(pk,malId){
     pushActivity('reset', malId, `${malId} — Cycle terminé`, `Durée : ${fmt(tot)}`);
     advanceTimer(malId,ms.step,-1,pk);
     ms.stepSecs=new Array(steps.length).fill(0);
-    ms.step=-1; ms.qty=0; ms.targetStock=null; ms.lot=''; ms.cycleStart=null; ms.stepStart=null;
+    ms.step=-1; ms.qty=0; ms.targetStock=null; ms.lot='';
+    ms.lotTransferred=false; ms.lotTransferredTo=''; // reset flag lot
+    ms.cycleStart=null; ms.stepStart=null;
     saveState(); renderAll(); return;
   }
   const prev=ms.step;
@@ -2237,6 +2323,12 @@ function transferToStock(pk, malId, stockId){
   const lot = ms.lot || '';
   if(qty <= 0) return;
 
+  // ⚠️ BLOCAGE LOT DÉJÀ TRANSFÉRÉ : si ce lot a déjà été envoyé vers un stock (même ou autre), bloquer
+  if(lot && ms.lotTransferred){
+    showToast(`⛔ Lot #${lot} déjà transféré vers ${ms.lotTransferredTo||'un stock'} — annulez l'étape pour recommencer`);
+    return;
+  }
+
   // CM6 comme destination malaxeur
   if(stockId === 'CM6'){
     const cm6 = state[pk].malaxeurs['CM6'];
@@ -2248,6 +2340,9 @@ function transferToStock(pk, malId, stockId){
     cm6.qty = qty;
     cm6.lot = lot;
     if(cm6.simpleState === 'vide') cm6.simpleState = 'valide';
+    // Marquer le lot comme transféré
+    ms.lotTransferred = true;
+    ms.lotTransferredTo = 'CM6';
     const lotStr = lot ? ` — Lot #${lot}` : '';
     showToast(`✅ ${qty}T → CM6${lotStr}`);
     return;
@@ -2278,6 +2373,12 @@ function transferToStock(pk, malId, stockId){
     ss.lots.push(lot);
     const maxLots = isB ? 3 : (pk === 'finesse' ? 1 : 2);
     while(ss.lots.length > maxLots) ss.lots.shift();
+  }
+
+  // Marquer le lot comme transféré — impossible de renvoyer ce lot vers n'importe quel autre stock
+  if(lot){
+    ms.lotTransferred = true;
+    ms.lotTransferredTo = stockId;
   }
 
   // Date/heure de remplissage pour finesse (affiché dans bilan journalier)
@@ -2343,6 +2444,13 @@ function setCM6TargetStock(malId,stockId){
 function setTargetStock(malId,stockId){
   for(const [pk,prod] of Object.entries(PRODUCTS)){
     if(prod.malaxeurs.find(m=>m.id===malId)){
+      const ms = state[pk].malaxeurs[malId];
+      const lot = (ms.lot||'').trim();
+      // Bloquer si ce lot a déjà été transféré vers n'importe quel stock
+      if(lot && ms.lotTransferred){
+        showToast(`⛔ Lot #${lot} déjà envoyé vers ${ms.lotTransferredTo||'un stock'} — impossible d'envoyer à nouveau`);
+        return;
+      }
       pushUndo();
       state[pk].malaxeurs[malId].targetStock=stockId;
       transferToStock(pk, malId, stockId);
@@ -2355,24 +2463,24 @@ function setLot(pk,malId,val){
   const clean=val.replace(/[^0-9]/g,'');
   const prev=state[pk].malaxeurs[malId].lot||'';
   if(clean && clean!==prev){
-    // Vérifier unicité du lot dans tous les malaxeurs et stocks
+    // Vérifier unicité du lot UNIQUEMENT dans le même produit (pk)
+    // Un même N° lot peut exister sur pomme ET citron — interdit uniquement dans le même produit/stock
     let duplicate = null;
-    for(const [p,prod] of Object.entries(PRODUCTS)){
-      for(const m of prod.malaxeurs){
-        const ms = state[p]?.malaxeurs[m.id];
-        if(ms && ms.lot===clean && m.id!==malId){ duplicate=m.id; break; }
+    const prod = PRODUCTS[pk];
+    // Vérifier dans les autres malaxeurs du même produit
+    for(const m of prod.malaxeurs){
+      const ms = state[pk]?.malaxeurs[m.id];
+      if(ms && ms.lot===clean && m.id!==malId){ duplicate=m.id; break; }
+    }
+    // Vérifier dans les stocks du même produit
+    if(!duplicate){
+      for(const s of prod.stocks){
+        const ss = state[pk]?.stocks[s.id];
+        if(ss && Array.isArray(ss.lots) && ss.lots.includes(clean)){ duplicate=s.id; break; }
       }
-      if(!duplicate){
-        for(const s of prod.stocks){
-          const ss = state[p]?.stocks[s.id];
-          if(ss && Array.isArray(ss.lots) && ss.lots.includes(clean)){ duplicate=s.id; break; }
-        }
-      }
-      if(duplicate) break;
     }
     if(duplicate){
-      showToast(`⛔ Lot #${clean} déjà utilisé (${duplicate}) — N° lot doit être unique`);
-      // Reset input
+      showToast(`⛔ Lot #${clean} déjà utilisé dans ${duplicate} (${PRODUCTS[pk].name}) — N° lot doit être unique par produit`);
       const inp = document.querySelector(`#card-${malId} .lot-input`);
       if(inp){ inp.value=prev; inp.classList.add('error'); setTimeout(()=>inp.classList.remove('error'),1500); }
       return;
@@ -2465,6 +2573,17 @@ function cancelCloseDay(){
 let _closeDayCallback = null;
 
 function closeDay(){
+  // Backup automatique avant clôture
+  if(window._fbReady){
+    const backup = {
+      state: JSON.parse(JSON.stringify(state)),
+      ts: Date.now(),
+      date: new Date().toLocaleString('fr-FR'),
+      user: currentUser || '—',
+      action: 'avant_cloture'
+    };
+    window._fbSet(FB_PATH+'/backup', backup).catch(()=>{});
+  }
   // Pause timers
   if(tickInterval){ clearInterval(tickInterval); tickInterval=null; }
   for(const [pk,prod] of Object.entries(PRODUCTS)){
@@ -2616,15 +2735,74 @@ function clearHistory(){
 }
 
 function resetDay(){
-  if(!confirm('Réinitialiser TOUS les malaxeurs et stocks ?\nCette action efface l\'état actuel (l\'historique reste).')) return;
+  // Double confirmation avec saisie de texte
+  const input = prompt('⚠️ RÉINITIALISATION TOTALE\n\nCette action efface TOUS les malaxeurs et stocks.\nL\'historique sera conservé.\n\nTapez CONFIRMER pour continuer :');
+  if(input === null) return; // annulé
+  if(input.trim().toUpperCase() !== 'CONFIRMER'){
+    showToast('❌ Réinitialisation annulée — texte incorrect');
+    return;
+  }
+  // Backup automatique avant reset
+  if(window._fbReady){
+    const backup = {
+      state: JSON.parse(JSON.stringify(state)),
+      ts: Date.now(),
+      date: new Date().toLocaleString('fr-FR'),
+      user: currentUser || '—',
+      action: 'avant_reset'
+    };
+    window._fbSet(FB_PATH+'/backup', backup).catch(()=>{});
+    showToast('💾 Backup sauvegardé avant réinitialisation');
+  }
   if(tickInterval){clearInterval(tickInterval);tickInterval=null;}
-  initState(); saveState(); renderAll(); showToast('Journée réinitialisée');
+  initState(); saveState(); renderAll();
+  pushActivity('reset','—','↺ Réinitialisation journée',`par ${currentUser||'—'}`);
+  showToast('Journée réinitialisée');
 }
 
-function newDay(){
-  if(!confirm('Démarrer une nouvelle journée ?\nL\'état actuel sera sauvegardé dans l\'historique.\nLes malaxeurs et timers continuent depuis là où ils étaient.')) return;
+let _newDayTimeout = null;
 
-  // ── Sauvegarder dans l'historique uniquement ──
+function newDay(){
+  // Double confirmation avec saisie de texte
+  const input = prompt('🌅 NOUVELLE JOURNÉE\n\nL\'état actuel sera sauvegardé dans l\'historique.\nLes malaxeurs et timers continuent depuis là où ils étaient.\n\nTapez CONFIRMER pour continuer :');
+  if(input === null) return;
+  if(input.trim().toUpperCase() !== 'CONFIRMER'){
+    showToast('❌ Nouvelle journée annulée — texte incorrect');
+    return;
+  }
+
+  // Backup automatique avant nouvelle journée
+  if(window._fbReady){
+    const backup = {
+      state: JSON.parse(JSON.stringify(state)),
+      ts: Date.now(),
+      date: new Date().toLocaleString('fr-FR'),
+      user: currentUser || '—',
+      action: 'avant_nouvelle_journee'
+    };
+    window._fbSet(FB_PATH+'/backup', backup).catch(()=>{});
+  }
+
+  // Délai 10 secondes avec possibilité d'annuler
+  showToast('🌅 Nouvelle journée dans 10s... Appuyez sur ↩ Annuler pour stopper');
+  const btnUndo = document.getElementById('btnUndo');
+  const origText = btnUndo ? btnUndo.textContent : '';
+  if(btnUndo){ btnUndo.textContent = '↩ ANNULER NOUVELLE J.'; btnUndo.disabled = false; btnUndo.onclick = cancelNewDay; }
+
+  _newDayTimeout = setTimeout(()=>{
+    if(btnUndo){ btnUndo.textContent = origText; btnUndo.onclick = ()=>openUndoModal(); }
+    _doNewDay();
+  }, 10000);
+}
+
+function cancelNewDay(){
+  if(_newDayTimeout){ clearTimeout(_newDayTimeout); _newDayTimeout = null; }
+  const btnUndo = document.getElementById('btnUndo');
+  if(btnUndo){ btnUndo.textContent = '↩ Annuler'; btnUndo.onclick = ()=>openUndoModal(); }
+  showToast('↩ Nouvelle journée annulée');
+}
+
+function _doNewDay(){
   const now=new Date();
   const snap={
     date:now.toLocaleDateString('fr-FR',{weekday:'long',year:'numeric',month:'long',day:'numeric'}),
@@ -2683,39 +2861,258 @@ function newDay(){
   showToast('🌅 Nouvelle journée démarrée — timers repris depuis la pause.');
 }
 
-// ===== HISTORY =====
+// ===== HISTORY BILAN =====
+let _histFilterDate = 'all';
+
 function openHistory(){
-  const body=document.getElementById('histBody');
-  let html=`<div class="share-info">🟢 <strong>Partage temps réel actif (Firebase)</strong> — Toute modification est synchronisée instantanément sur tous les appareils connectés. Partagez simplement ce fichier HTML : chacun voit la même chose en direct.</div>`;
-  if(history.length===0){
-    html+='<div class="no-hist">Aucune journée clôturée.<br>Utilisez "Clôturer journée" pour enregistrer.</div>';
-  } else {
-    html+=history.map((h)=>{
-      const prods=Object.entries(h.products).map(([pk,p])=>{
-        const col=PRODUCTS[pk]?.color||'dim';
-        const malRows=Object.entries(p.malaxeurs).map(([id,d])=>`
-          <div class="hist-row">
-            <span>${id}${d.lot?` #${d.lot}`:''}</span>
-            <span>${d.qty>0?d.qty.toFixed(1)+' T':'—'} · ${d.step}</span>
-          </div>`).join('');
-        return `<div class="hist-prod">
-          <div class="hist-prod-name" style="color:var(--${col})">${p.name}</div>
-          ${malRows}
-          <div class="hist-total">
-            <span>Stock: ${p.stockTotal.toFixed(1)}T</span>
-            <span style="color:var(--${col})">${p.total.toFixed(1)} T</span>
-          </div>
-        </div>`;
-      }).join('');
-      return `<div class="hist-entry">
-        <div class="hist-date">📅 ${h.date} — ${h.time}</div>
-        <div class="hist-grid">${prods}</div>
-      </div>`;
-    }).join('');
-  }
-  body.innerHTML=html;
+  // Mettre à jour le tag atelier dans le titre du modal
+  const tag = document.getElementById('histModalAtelierTag');
+  if(tag) tag.textContent = currentAtelier;
+
+  // Construire la liste des dates disponibles pour le filtre
+  const dates = ['all', ...new Set(history.map(h => h.date))];
+  _histFilterDate = 'all';
+
+  renderHistoryModal(dates);
   document.getElementById('histModal').classList.add('open');
 }
+
+function renderHistoryModal(dates){
+  const body = document.getElementById('histBody');
+
+  // Barre de filtres dates
+  const dateOpts = dates.map(d =>
+    `<button class="act-filter-btn${_histFilterDate===d?' active':''}"
+      onclick="_histFilterDate='${d}';renderHistoryBilanContent()"
+      style="white-space:nowrap;font-size:10px">
+      ${d==='all'?'📅 Tous les jours':d}
+    </button>`
+  ).join('');
+
+  body.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center" id="histDateFilters">
+        <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:1px;white-space:nowrap">FILTRER PAR JOUR :</span>
+        ${dateOpts}
+      </div>
+      <button onclick="printBilanHistory()" style="padding:6px 14px;border-radius:7px;border:1px solid rgba(90,245,160,.4);background:rgba(90,245,160,.08);color:var(--ok);font-family:'DM Mono',monospace;font-size:11px;cursor:pointer;white-space:nowrap;flex-shrink:0">
+        🖨️ Imprimer
+      </button>
+    </div>
+    <div id="histBilanContent"></div>`;
+
+  renderHistoryBilanContent();
+}
+
+function renderHistoryBilanContent(){
+  // Mettre à jour les boutons filtres actifs
+  document.querySelectorAll('#histDateFilters .act-filter-btn').forEach(btn => {
+    const txt = btn.textContent.trim();
+    const isAll = txt.includes('Tous');
+    const d = isAll ? 'all' : txt;
+    btn.classList.toggle('active', _histFilterDate === d || (_histFilterDate==='all' && isAll));
+  });
+
+  const filtered = _histFilterDate === 'all'
+    ? history
+    : history.filter(h => h.date === _histFilterDate);
+
+  const el = document.getElementById('histBilanContent');
+  if(!el) return;
+
+  if(filtered.length === 0){
+    el.innerHTML = '<div class="no-hist">Aucune journée clôturée pour cette période.</div>';
+    return;
+  }
+
+  el.innerHTML = filtered.map((h, idx) => {
+    const prods = Object.entries(h.products||{}).map(([pk, p]) => {
+      const col = PRODUCTS[pk]?.color || 'dim';
+      const colHex = col==='pomme'?'#6fcf5a':col==='citron'?'#f5c842':'#5ab4f5';
+
+      // Malaxeurs
+      const malRows = Object.entries(p.malaxeurs||{}).map(([id, d]) => `
+        <tr>
+          <td style="padding:5px 8px;font-family:'DM Mono',monospace;font-size:11px;color:var(--text)">${id}</td>
+          <td style="padding:5px 8px;font-family:'DM Mono',monospace;font-size:11px;color:#a078f5">${d.lot?'#'+d.lot:'—'}</td>
+          <td style="padding:5px 8px;font-family:'DM Mono',monospace;font-size:11px;color:var(--dim)">${d.step||'—'}</td>
+          <td style="padding:5px 8px;font-family:'DM Mono',monospace;font-size:11px;text-align:right;color:var(--text);font-weight:500">${(d.qty||0)>0?(d.qty).toFixed(1)+' T':'—'}</td>
+        </tr>`).join('');
+
+      // Stocks (avec consommation si disponible)
+      const stockRows = (() => {
+        const stocks = PRODUCTS[pk]?.stocks || [];
+        if(stocks.length === 0){
+          // Fallback si PRODUCTS ne correspond pas (atelier B)
+          const stockTotal = p.stockTotal || 0;
+          return `<tr><td colspan="4" style="padding:5px 8px;color:var(--dim);font-family:'DM Mono',monospace;font-size:11px">Total stock : ${stockTotal.toFixed(1)} T</td></tr>`;
+        }
+        return stocks.map(s => {
+          const conso = p.conso?.[s.id];
+          const fin = conso ? conso.fin : (p.stockTotal ? '' : 0);
+          const debut = conso ? conso.debut : null;
+          const transf = conso ? conso.transf : null;
+          const consomme = conso ? conso.consomme : null;
+          const consCol = consomme!==null ? (consomme<0?'var(--danger)':consomme>0?'var(--ok)':'var(--dim)') : 'var(--dim)';
+          return `<tr style="background:rgba(255,255,255,.02)">
+            <td style="padding:5px 8px;font-family:'DM Mono',monospace;font-size:11px;color:var(--dim)">${s.id}</td>
+            <td style="padding:5px 8px;font-family:'DM Mono',monospace;font-size:11px;color:var(--muted)">${debut!==null?debut.toFixed(1)+' T':'—'}</td>
+            <td style="padding:5px 8px;font-family:'DM Mono',monospace;font-size:11px;color:var(--ok)">${transf!==null?'+'+transf.toFixed(1)+' T':'—'}</td>
+            <td style="padding:5px 8px;font-family:'DM Mono',monospace;font-size:11px;text-align:right;color:${consCol};font-weight:${consomme!==null?'600':'400'}">${consomme!==null?consomme.toFixed(1)+' T consommé':fin!==''?fin.toFixed(1)+' T':'—'}</td>
+          </tr>`;
+        }).join('');
+      })();
+
+      return `
+        <div style="margin-bottom:16px">
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:14px;letter-spacing:2px;color:${colHex};margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--border2)">
+            ${p.name} — Total : <span style="font-size:16px">${(p.total||0).toFixed(1)} T</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--muted);letter-spacing:1.5px;margin-bottom:4px">MALAXEURS</div>
+              <table style="width:100%;border-collapse:collapse;border:1px solid var(--border)">
+                <thead><tr style="background:var(--surface2)">
+                  <th style="padding:4px 8px;text-align:left;font-family:'DM Mono',monospace;font-size:9px;color:var(--muted);letter-spacing:1px">MAL.</th>
+                  <th style="padding:4px 8px;text-align:left;font-family:'DM Mono',monospace;font-size:9px;color:var(--muted);letter-spacing:1px">LOT</th>
+                  <th style="padding:4px 8px;text-align:left;font-family:'DM Mono',monospace;font-size:9px;color:var(--muted);letter-spacing:1px">ÉTAPE</th>
+                  <th style="padding:4px 8px;text-align:right;font-family:'DM Mono',monospace;font-size:9px;color:var(--muted);letter-spacing:1px">QTÉ</th>
+                </tr></thead>
+                <tbody>${malRows}</tbody>
+              </table>
+            </div>
+            <div>
+              <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--muted);letter-spacing:1.5px;margin-bottom:4px">STOCKS / CONSOMMATION</div>
+              <table style="width:100%;border-collapse:collapse;border:1px solid var(--border)">
+                <thead><tr style="background:var(--surface2)">
+                  <th style="padding:4px 8px;text-align:left;font-family:'DM Mono',monospace;font-size:9px;color:var(--muted);letter-spacing:1px">STOCK</th>
+                  <th style="padding:4px 8px;text-align:left;font-family:'DM Mono',monospace;font-size:9px;color:var(--muted);letter-spacing:1px">DÉBUT J.</th>
+                  <th style="padding:4px 8px;text-align:left;font-family:'DM Mono',monospace;font-size:9px;color:var(--muted);letter-spacing:1px">+ PROD</th>
+                  <th style="padding:4px 8px;text-align:right;font-family:'DM Mono',monospace;font-size:9px;color:var(--citron);letter-spacing:1px">CONSOMMÉ</th>
+                </tr></thead>
+                <tbody>${stockRows}</tbody>
+                <tfoot><tr style="border-top:2px solid var(--border2)">
+                  <td colspan="2" style="padding:5px 8px;font-family:'DM Mono',monospace;font-size:10px;color:var(--muted)">Total stock fin de journée</td>
+                  <td colspan="2" style="padding:5px 8px;text-align:right;font-family:'DM Mono',monospace;font-size:12px;font-weight:700;color:${colHex}">${(p.stockTotal||0).toFixed(1)} T</td>
+                </tr></tfoot>
+              </table>
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="hist-entry" id="bilan-day-${idx}" style="margin-bottom:20px;padding:16px 18px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+          <div>
+            <div class="hist-date" style="font-size:13px;letter-spacing:1px">📅 ${h.date}</div>
+            <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);margin-top:2px">Clôture : ${h.time||'—'} · Atelier ${currentAtelier}</div>
+          </div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:2px;color:var(--finesse)">
+            ${Object.values(h.products||{}).reduce((a,p)=>a+(p.total||0),0).toFixed(1)} T
+            <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:1px"> TOTAL</span>
+          </div>
+        </div>
+        ${prods}
+      </div>`;
+  }).join('');
+}
+
+function printBilanHistory(){
+  const filtered = _histFilterDate === 'all'
+    ? history
+    : history.filter(h => h.date === _histFilterDate);
+
+  if(filtered.length === 0){ showToast('⚠️ Aucune donnée à imprimer'); return; }
+
+  const title = _histFilterDate === 'all'
+    ? `PROD.CTRL — Atelier ${currentAtelier} — Historique Bilans`
+    : `PROD.CTRL — Atelier ${currentAtelier} — Bilan du ${_histFilterDate}`;
+
+  const content = document.getElementById('histBilanContent')?.innerHTML || '';
+
+  const printWin = window.open('', '_blank');
+  printWin.document.write(`<!DOCTYPE html><html lang="fr"><head>
+    <meta charset="UTF-8">
+    <title>${title}</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&display=swap');
+      * { margin:0; padding:0; box-sizing:border-box; }
+      body { font-family:'DM Sans',sans-serif; font-size:12px; color:#111; background:#fff; padding:20px; }
+      h1 { font-family:'Bebas Neue',sans-serif; font-size:24px; letter-spacing:3px; margin-bottom:4px; }
+      .subtitle { font-family:'DM Mono',monospace; font-size:10px; color:#666; margin-bottom:20px; }
+      .hist-entry { border:1px solid #ddd; border-radius:8px; padding:14px 16px; margin-bottom:18px; page-break-inside:avoid; }
+      .hist-date { font-family:'DM Mono',monospace; font-size:13px; color:#c4a020; letter-spacing:1px; font-weight:600; }
+      table { width:100%; border-collapse:collapse; font-size:11px; }
+      th { background:#f0f2f5; padding:4px 8px; text-align:left; font-family:'DM Mono',monospace; font-size:9px; color:#666; letter-spacing:1px; border:1px solid #ddd; }
+      td { padding:4px 8px; border:1px solid #eee; font-family:'DM Mono',monospace; }
+      tfoot td { background:#f8f8f8; font-weight:700; border-top:2px solid #ddd; }
+      .prod-title { font-family:'Bebas Neue',sans-serif; font-size:13px; letter-spacing:2px; margin:12px 0 6px; padding-bottom:3px; border-bottom:2px solid currentColor; }
+      .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+      .section-lbl { font-family:'DM Mono',monospace; font-size:9px; color:#888; letter-spacing:1.5px; margin-bottom:4px; }
+      .total-row { display:flex; justify-content:space-between; align-items:center; margin-top:8px; padding-top:6px; border-top:2px solid #ddd; font-family:'DM Mono',monospace; font-size:13px; font-weight:700; }
+      @media print {
+        body { padding:10px; }
+        .hist-entry { page-break-inside:avoid; }
+        @page { margin:15mm; }
+      }
+    </style>
+  </head><body>
+    <h1>PROD.CTRL — ATELIER ${currentAtelier}</h1>
+    <div class="subtitle">Historique Bilans de Journée · Imprimé le ${new Date().toLocaleString('fr-FR')} · par ${currentUser||'—'}</div>
+    ${filtered.map(h => {
+      const prodsHtml = Object.entries(h.products||{}).map(([pk,p]) => {
+        const colMap = {pomme:'#4a9e38', citron:'#c4a020', finesse:'#3a88c8'};
+        const col = colMap[pk]||'#555';
+
+        const malRows = Object.entries(p.malaxeurs||{}).map(([id,d]) =>
+          `<tr><td>${id}</td><td style="color:#7040c0">${d.lot?'#'+d.lot:'—'}</td><td style="color:#666">${d.step||'—'}</td><td style="text-align:right;font-weight:600">${(d.qty||0)>0?(d.qty).toFixed(1)+' T':'—'}</td></tr>`
+        ).join('');
+
+        const stocks = PRODUCTS[pk]?.stocks||[];
+        const stockRows = stocks.map(s => {
+          const c = p.conso?.[s.id];
+          return `<tr>
+            <td>${s.id}</td>
+            <td>${c?c.debut.toFixed(1)+' T':'—'}</td>
+            <td style="color:#2a7a2a">${c?'+'+c.transf.toFixed(1)+' T':'—'}</td>
+            <td style="text-align:right;font-weight:700;color:${c&&c.consomme>0?'#2a7a2a':c&&c.consomme<0?'#c00':'#888'}">${c?c.consomme.toFixed(1)+' T':'—'}</td>
+          </tr>`;
+        }).join('');
+
+        return `<div class="prod-title" style="color:${col}">${p.name} — Total : ${(p.total||0).toFixed(1)} T</div>
+          <div class="grid2">
+            <div>
+              <div class="section-lbl">MALAXEURS</div>
+              <table><thead><tr><th>MAL.</th><th>LOT</th><th>ÉTAPE</th><th>QTÉ</th></tr></thead><tbody>${malRows}</tbody></table>
+            </div>
+            <div>
+              <div class="section-lbl">STOCKS / CONSOMMATION</div>
+              <table><thead><tr><th>STOCK</th><th>DÉBUT J.</th><th>+ PROD</th><th>CONSOMMÉ</th></tr></thead>
+              <tbody>${stockRows}</tbody>
+              <tfoot><tr><td colspan="3">Stock fin de journée</td><td style="text-align:right;color:${col}">${(p.stockTotal||0).toFixed(1)} T</td></tr></tfoot>
+              </table>
+            </div>
+          </div>`;
+      }).join('');
+
+      const grandTotal = Object.values(h.products||{}).reduce((a,p)=>a+(p.total||0),0);
+      return `<div class="hist-entry">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
+          <div>
+            <div class="hist-date">📅 ${h.date}</div>
+            <div style="font-family:'DM Mono',monospace;font-size:10px;color:#888;margin-top:2px">Clôture : ${h.time||'—'}</div>
+          </div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:#3a88c8">${grandTotal.toFixed(1)} T TOTAL</div>
+        </div>
+        ${prodsHtml}
+      </div>`;
+    }).join('')}
+  </body></html>`);
+  printWin.document.close();
+  printWin.onload = () => { printWin.focus(); printWin.print(); };
+}
+
 function closeHistory(){document.getElementById('histModal').classList.remove('open');}
 
 // ===== PRÉSENCE EN TEMPS RÉEL =====
@@ -3136,16 +3533,16 @@ function startApp(){
     const key = BIOMETRIC_KEY();
     const supported = await checkBiometricAvailable().catch(()=>false);
     if(supported && !localStorage.getItem(key)){
-      const btnReg = document.getElementById('btnRegisterBiometric');
-      // Afficher toast d'invitation
       showToast('💡 Conseil : enregistrez votre empreinte/visage au prochain login');
     }
   }, 3000);
-  initState();
-  renderAll();
+
+  // ⚠️ FIX CRITIQUE : NE PAS appeler initState() ici — Firebase charge le vrai état
+  // initState() est appelé UNIQUEMENT en fallback hors-ligne
+
   showToast('🔄 Connexion à Firebase...');
   if(window._fbReady){
-    startFirebaseSync();
+    startFirebaseSync(); // startFirebaseSync appelle renderAll() après merge
     startPresence();
     showToast('🟢 Connecté — synchronisation en temps réel active');
   } else {
@@ -3155,7 +3552,12 @@ function startApp(){
       showToast('🟢 Connecté — synchronisation en temps réel active');
     }, {once:true});
     setTimeout(()=>{
-      if(!window._fbReady) showToast('⚠️ Firebase non disponible — mode local uniquement');
+      if(!window._fbReady){
+        // Fallback hors-ligne uniquement
+        initState();
+        renderAll();
+        showToast('⚠️ Firebase non disponible — mode local uniquement');
+      }
     }, 6000);
   }
 }
