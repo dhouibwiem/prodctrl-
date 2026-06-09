@@ -550,14 +550,14 @@ window.dispatchEvent(new Event('fbReady'));
     <div class="product-header finesse">
       <div class="product-name finesse">FINESSE</div>
       <div class="product-summary">
-        <span>Actifs: <strong id="finesse-active">0</strong>/5</span>
+        <span>Actifs: <strong id="finesse-active">0</strong>/<span id="finesse-mal-count">5</span></span>
         <span>Journée: <strong id="finesse-day-total">0</strong> T</span>
-        <span>Stock: <strong id="finesse-stock-total">0</strong> / 85 T</span>
+        <span>Stock: <strong id="finesse-stock-total">0</strong> / <span id="finesse-stock-max">85</span> T</span>
       </div>
     </div>
     <div class="product-body malaxeurs-body" id="finesse-body"></div>
     <div class="product-body" style="padding-top:0;flex-direction:column">
-      <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);margin-bottom:8px;letter-spacing:1px">CITERNES DE STOCKAGE (S1–S5)</div>
+      <div id="finesse-stock-label" style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);margin-bottom:8px;letter-spacing:1px">CITERNES DE STOCKAGE (S1–S5)</div>
       <div class="stock-grid" id="finesse-stock-tanks"></div>
     </div>
   </div>
@@ -1702,12 +1702,20 @@ function mergeDefaults(remoteState){
         while(ms.stepSecs.length<nSteps) ms.stepSecs.push(0);
       }
     }
+    // BUG FIX 2 (racine) : supprimer les clés de stocks étrangères à l'atelier courant.
+    // Empêche que les lots/quantités Finesse Atelier A (S1-S5) contaminent
+    // les stocks Atelier B (S1-S7), et inversement.
+    if(remoteState[pk].stocks){
+      const validStockIds = new Set(prod.stocks.map(s => s.id));
+      for(const sid of Object.keys(remoteState[pk].stocks)){
+        if(!validStockIds.has(sid)) delete remoteState[pk].stocks[sid];
+      }
+    }
+
     for(const s of prod.stocks){
       if(!remoteState[pk].stocks[s.id]) remoteState[pk].stocks[s.id]={qty:0,prodMode:'vide',lots:[]};
       if(remoteState[pk].stocks[s.id].prodMode===undefined) remoteState[pk].stocks[s.id].prodMode='vide';
-      // BUG FIX 2 : si le stock est vide (qty=0), effacer les lots résiduels
-      // Cela évite que les stocks S1-S5 de l'Atelier B héritent des numéros de lots
-      // et quantités des stocks Finesse de l'Atelier A (IDs identiques S1-S5)
+      // Nettoyer les lots résiduels sur un stock vide
       const ss = remoteState[pk].stocks[s.id];
       if(!Array.isArray(ss.lots)) ss.lots = [];
       if((ss.qty||0) === 0 && ss.lots.length > 0) ss.lots = [];
@@ -1894,7 +1902,28 @@ function advanceTimer(malId,fromStep,toStep,pk){
 }
 
 // ===== RENDER =====
+function applyAtelierUI(){
+  // Met à jour les labels statiques HTML qui dépendent de l'atelier sélectionné
+  // (compte de malaxeurs, max stock, label citernes) — corrige l'affichage Atelier B
+  const finProd = PRODUCTS['finesse'];
+  if(!finProd) return;
+  const malCount = finProd.malaxeurs.length;
+  const stockMax = finProd.stocks.reduce((a,s) => a + s.max, 0);
+  const stockIds = finProd.stocks.map(s => s.id);
+  const stockRange = stockIds.length > 1
+    ? stockIds[0] + '–' + stockIds[stockIds.length-1]
+    : stockIds[0] || 'S1';
+
+  const elMal = document.getElementById('finesse-mal-count');
+  const elMax = document.getElementById('finesse-stock-max');
+  const elLbl = document.getElementById('finesse-stock-label');
+  if(elMal) elMal.textContent = malCount;
+  if(elMax) elMax.textContent = stockMax;
+  if(elLbl) elLbl.textContent = 'CITERNES DE STOCKAGE (' + stockRange + ')';
+}
+
 function renderAll(){
+  applyAtelierUI();
   for(const [pk,prod] of Object.entries(PRODUCTS)){
     renderProduct(pk,prod);
     renderStocks(pk,prod);
