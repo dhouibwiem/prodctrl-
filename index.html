@@ -1982,7 +1982,7 @@ function buildCard(pk,m,ms){
       const onclick=occupied
         ? `showToast('⛔ ${s.id} occupé — videz avant')`
         : `setCM6TargetStock('${m.id}','${s.id}')`;
-      return `<button class="stock-btn${sel?' selected':''}" style="${occupied?'opacity:.4;cursor:not-allowed;':''}" onclick="${onclick}">${s.id}${occupied?' 🔒':''}</button>`;
+      return `<button class="stock-btn${sel?' selected':''}" style="${occupied?'opacity:.4;cursor:not-allowed;':''}" onclick="${onclick}">${s.id}<span style="font-size:9px;opacity:.5;margin-left:2px">(${currentAtelier})</span>${occupied?' 🔒':''}</button>`;
     }).join('');
     const versStockSel=isVersStock?`<div class="vers-stock-selector">
       <div class="vers-stock-label">DESTINATION STOCK</div>
@@ -2080,7 +2080,7 @@ function buildCard(pk,m,ms){
         lockIcon = '';
         styleExtra = '';
       }
-      return `<button class="stock-btn${sel?' selected':''}" style="${styleExtra}" onclick="${onclick}">${s.id}${lockIcon}</button>`;
+      return `<button class="stock-btn${sel?' selected':''}" style="${styleExtra}" onclick="${onclick}">${s.id}<span style="font-size:9px;opacity:.5;margin-left:2px">(${currentAtelier})</span>${lockIcon}</button>`;
     }).join('');
 
     let cm6Btn='';
@@ -2202,7 +2202,7 @@ function renderStocks(pk,prod){
 
     tank.innerHTML=`
       <div class="tank-id ${PRODUCTS[pk].color}">
-        <span class="tid">${s.id}${modeBadge}</span>
+        <span class="tid">${s.id}${isFinesse ? `<span style="font-size:9px;opacity:.5;font-family:'DM Mono',monospace;margin-left:3px">(${currentAtelier})</span>` : ''}${modeBadge}</span>
         ${isEmpty?'<span class="tank-empty-badge">VIDE</span>':''}
       </div>
       ${lotsHtml}
@@ -2299,7 +2299,7 @@ function renderDaySummary(){
       const fillHtml=(pk==='finesse'&&!isEmpty&&ss.lastFill)
         ?`<div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--muted);text-align:right;padding:1px 2px 3px">🕐 ${ss.lastFill}</div>`:'';
       stockRows+=`<div class="summary-row">
-        <span class="slabel">${s.id}</span>
+        <span class="slabel">${s.id}<span style="font-size:9px;opacity:.45;margin-left:2px">(${currentAtelier})</span></span>
         <span class="val" style="${isEmpty?'color:var(--danger)':''}">${isEmpty?'VIDE':ss.qty.toFixed(1)+' / '+s.max+'T'+modeStr}</span>
       </div>${fillHtml}`;
     }
@@ -3022,17 +3022,25 @@ function _doCloseDay(){
       if(!m.simple&&(ms.step===valIdx||ms.step===vsIdx)) malQty+=q;
       if(m.simple&&ms.simpleState==='valide') malQty+=q;
     }
-    for(const s of prod.stocks){ const ss2=state[pk].stocks[s.id]; stockTotal+=ss2.qty; }
-    // Calcul consommation par stock
+    // FIX 1 : ne snapshotter QUE les stocks définis dans PRODUCTS[pk]
+    // pour ne jamais écrire dans l'historique des stocks étrangers
+    // (ex: S6/S7 Atelier B ne doivent pas apparaître dans l'historique Atelier A)
+    const validStockIdsSnap = new Set(prod.stocks.map(s => s.id));
+    for(const s of prod.stocks){
+      const ss2 = state[pk].stocks[s.id];
+      if(ss2) stockTotal += ss2.qty;
+    }
+    // Calcul consommation par stock — uniquement les stocks valides de cet atelier
     const conso = {};
     for(const s of prod.stocks){
+      if(!validStockIdsSnap.has(s.id)) continue; // sécurité
       const debut  = stockStartOfDay[pk]?.[s.id] || 0;
       const transf = transfersOfDay[pk]?.[s.id]  || 0;
       const fin    = state[pk].stocks[s.id]?.qty  || 0;
-      // Qté restante dans malaxeurs à l'étape "vers stock" uniquement
       conso[s.id] = { debut, transf, fin, consomme: debut + transf - fin };
     }
-    snap.products[pk]={name:prod.name,malaxeurs:malData,stockTotal,malQty,total:stockTotal+malQty,conso};
+    // Sauvegarder l'identifiant de l'atelier dans le snapshot pour l'historique
+    snap.products[pk]={name:prod.name,malaxeurs:malData,stockTotal,malQty,total:stockTotal+malQty,conso,atelier:currentAtelier};
   }
   history.unshift(snap);
   saveHistory();
@@ -3273,22 +3281,32 @@ function renderHistoryBilanContent(){
         </tr>`).join('');
 
       // Stocks (avec consommation si disponible)
+      // FIX 2 : utiliser les IDs des stocks depuis le snapshot (p.conso) comme
+      // source de vérité — permet d'afficher correctement l'historique d'un atelier
+      // différent (ex: Atelier B avec S1-S7 lu depuis Atelier A qui a S1-S5 dans PRODUCTS)
       const stockRows = (() => {
-        const stocks = PRODUCTS[pk]?.stocks || [];
-        if(stocks.length === 0){
-          // Fallback si PRODUCTS ne correspond pas (atelier B)
+        // Priorité : IDs depuis le snapshot sauvegardé (p.conso)
+        const consoKeys = p.conso ? Object.keys(p.conso) : [];
+        // Fallback : stocks du PRODUCTS courant si pas de conso dans le snapshot
+        const stockIds = consoKeys.length > 0
+          ? consoKeys
+          : (PRODUCTS[pk]?.stocks || []).map(s => s.id);
+
+        if(stockIds.length === 0){
           const stockTotal = p.stockTotal || 0;
           return `<tr><td colspan="4" style="padding:5px 8px;color:var(--dim);font-family:'DM Mono',monospace;font-size:11px">Total stock : ${stockTotal.toFixed(1)} T</td></tr>`;
         }
-        return stocks.map(s => {
-          const conso = p.conso?.[s.id];
-          const fin = conso ? conso.fin : (p.stockTotal ? '' : 0);
+        return stockIds.map(sid => {
+          const conso = p.conso?.[sid];
+          const fin = conso ? conso.fin : 0;
           const debut = conso ? conso.debut : null;
           const transf = conso ? conso.transf : null;
           const consomme = conso ? conso.consomme : null;
           const consCol = consomme!==null ? (consomme<0?'var(--danger)':consomme>0?'var(--ok)':'var(--dim)') : 'var(--dim)';
+          // Afficher l'atelier si sauvegardé dans le snapshot (FIX 3 préparation)
+          const atelierTag = p.atelier ? ` <span style="font-size:9px;color:var(--muted);opacity:.6">(${p.atelier})</span>` : '';
           return `<tr style="background:rgba(255,255,255,.02)">
-            <td style="padding:5px 8px;font-family:'DM Mono',monospace;font-size:11px;color:var(--dim)">${s.id}</td>
+            <td style="padding:5px 8px;font-family:'DM Mono',monospace;font-size:11px;color:var(--dim)">${sid}${atelierTag}</td>
             <td style="padding:5px 8px;font-family:'DM Mono',monospace;font-size:11px;color:var(--muted)">${debut!==null?debut.toFixed(1)+' T':'—'}</td>
             <td style="padding:5px 8px;font-family:'DM Mono',monospace;font-size:11px;color:var(--ok)">${transf!==null?'+'+transf.toFixed(1)+' T':'—'}</td>
             <td style="padding:5px 8px;font-family:'DM Mono',monospace;font-size:11px;text-align:right;color:${consCol};font-weight:${consomme!==null?'600':'400'}">${consomme!==null?consomme.toFixed(1)+' T consommé':fin!==''?fin.toFixed(1)+' T':'—'}</td>
