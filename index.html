@@ -1364,7 +1364,7 @@ const PRODUCTS_B = {
       {id:"CM11",max:4},{id:"CM12",max:4},{id:"CM13",max:4},{id:"CM14",max:4},
       {id:"CM15",max:6},{id:"CM16",max:6}
     ],
-    stocks:[{id:"S1_B",max:12},{id:"S2_B",max:12},{id:"S3_B",max:12},{id:"S4_B",max:12},{id:"S5_B",max:12},{id:"S6_B",max:12},{id:"S7_B",max:12}],
+    stocks:[{id:"S1",max:12},{id:"S2",max:12},{id:"S3",max:12},{id:"S4",max:12},{id:"S5",max:12},{id:"S6",max:12},{id:"S7",max:12}],
     stepType:'finesse'}
 };
 
@@ -1748,27 +1748,6 @@ function startFirebaseSync(){
 
   window._fbOnValue(FB_PATH+'/state', (remote) => {
     if(!remote){ initState(); saveState(); return; } // DB empty, push clean state
-
-    // MIGRATION : si on est Atelier B et que Firebase contient encore des stocks
-    // sous les anciennes clés S1…S7 (sans suffixe _B), les migrer vers S1_B…S7_B
-    // et sauvegarder immédiatement pour nettoyer Firebase une bonne fois pour toutes.
-    if(currentAtelier === 'B' && remote.finesse && remote.finesse.stocks){
-      const oldKeys = Object.keys(remote.finesse.stocks).filter(k => !k.endsWith('_B'));
-      if(oldKeys.length > 0){
-        console.log('[Migration] Atelier B: migration des stocks', oldKeys, '→ suffixe _B');
-        for(const k of oldKeys){
-          const newKey = k + '_B';
-          // Ne copier que si la clé _B n'a pas déjà de données valides
-          if(!remote.finesse.stocks[newKey] || (remote.finesse.stocks[newKey].qty||0) === 0){
-            remote.finesse.stocks[newKey] = remote.finesse.stocks[k];
-          }
-          delete remote.finesse.stocks[k];
-        }
-        // Sauvegarder la migration immédiatement dans Firebase
-        window._fbSet(FB_PATH + '/state/finesse/stocks', remote.finesse.stocks).catch(()=>{});
-      }
-    }
-
     // Merge and apply
     state = mergeDefaults(remote);
     // Restaurer dayPaused depuis Firebase
@@ -1930,7 +1909,7 @@ function applyAtelierUI(){
   if(!finProd) return;
   const malCount = finProd.malaxeurs.length;
   const stockMax = finProd.stocks.reduce((a,s) => a + s.max, 0);
-  const stockIds = finProd.stocks.map(s => s.id.replace('_B',''));
+  const stockIds = finProd.stocks.map(s => s.id);
   const stockRange = stockIds.length > 1
     ? stockIds[0] + '–' + stockIds[stockIds.length-1]
     : stockIds[0] || 'S1';
@@ -2003,7 +1982,7 @@ function buildCard(pk,m,ms){
       const onclick=occupied
         ? `showToast('⛔ ${s.id} occupé — videz avant')`
         : `setCM6TargetStock('${m.id}','${s.id}')`;
-      return `<button class="stock-btn${sel?' selected':''}" style="${occupied?'opacity:.4;cursor:not-allowed;':''}" onclick="${onclick}">${s.id.replace('_B','')}<span style="font-size:9px;opacity:.5;margin-left:2px">(${currentAtelier})</span>${occupied?' 🔒':''}</button>`;
+      return `<button class="stock-btn${sel?' selected':''}" style="${occupied?'opacity:.4;cursor:not-allowed;':''}" onclick="${onclick}">${s.id}<span style="font-size:9px;opacity:.5;margin-left:2px">(${currentAtelier})</span>${occupied?' 🔒':''}</button>`;
     }).join('');
     const versStockSel=isVersStock?`<div class="vers-stock-selector">
       <div class="vers-stock-label">DESTINATION STOCK</div>
@@ -2101,7 +2080,7 @@ function buildCard(pk,m,ms){
         lockIcon = '';
         styleExtra = '';
       }
-      return `<button class="stock-btn${sel?' selected':''}" style="${styleExtra}" onclick="${onclick}">${s.id.replace('_B','')}<span style="font-size:9px;opacity:.5;margin-left:2px">(${currentAtelier})</span>${lockIcon}</button>`;
+      return `<button class="stock-btn${sel?' selected':''}" style="${styleExtra}" onclick="${onclick}">${s.id}<span style="font-size:9px;opacity:.5;margin-left:2px">(${currentAtelier})</span>${lockIcon}</button>`;
     }).join('');
 
     let cm6Btn='';
@@ -2223,7 +2202,7 @@ function renderStocks(pk,prod){
 
     tank.innerHTML=`
       <div class="tank-id ${PRODUCTS[pk].color}">
-        <span class="tid">${s.id.replace('_B','')}${isFinesse ? `<span style="font-size:9px;opacity:.5;font-family:'DM Mono',monospace;margin-left:3px">(${currentAtelier})</span>` : ''}${modeBadge}</span>
+        <span class="tid">${s.id}${isFinesse ? `<span style="font-size:9px;opacity:.5;font-family:'DM Mono',monospace;margin-left:3px">(${currentAtelier})</span>` : ''}${modeBadge}</span>
         ${isEmpty?'<span class="tank-empty-badge">VIDE</span>':''}
       </div>
       ${lotsHtml}
@@ -2320,7 +2299,7 @@ function renderDaySummary(){
       const fillHtml=(pk==='finesse'&&!isEmpty&&ss.lastFill)
         ?`<div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--muted);text-align:right;padding:1px 2px 3px">🕐 ${ss.lastFill}</div>`:'';
       stockRows+=`<div class="summary-row">
-        <span class="slabel">${s.id.replace('_B','')}${isFinesse?`<span style="font-size:9px;opacity:.45;margin-left:2px">(${currentAtelier})</span>`:''}</span>
+        <span class="slabel">${s.id}<span style="font-size:9px;opacity:.45;margin-left:2px">(${currentAtelier})</span></span>
         <span class="val" style="${isEmpty?'color:var(--danger)':''}">${isEmpty?'VIDE':ss.qty.toFixed(1)+' / '+s.max+'T'+modeStr}</span>
       </div>${fillHtml}`;
     }
@@ -3327,7 +3306,7 @@ function renderHistoryBilanContent(){
           // Afficher l'atelier si sauvegardé dans le snapshot (FIX 3 préparation)
           const atelierTag = p.atelier ? ` <span style="font-size:9px;color:var(--muted);opacity:.6">(${p.atelier})</span>` : '';
           return `<tr style="background:rgba(255,255,255,.02)">
-            <td style="padding:5px 8px;font-family:'DM Mono',monospace;font-size:11px;color:var(--dim)">${sid.replace('_B','')}${atelierTag}</td>
+            <td style="padding:5px 8px;font-family:'DM Mono',monospace;font-size:11px;color:var(--dim)">${sid}${atelierTag}</td>
             <td style="padding:5px 8px;font-family:'DM Mono',monospace;font-size:11px;color:var(--muted)">${debut!==null?debut.toFixed(1)+' T':'—'}</td>
             <td style="padding:5px 8px;font-family:'DM Mono',monospace;font-size:11px;color:var(--ok)">${transf!==null?'+'+transf.toFixed(1)+' T':'—'}</td>
             <td style="padding:5px 8px;font-family:'DM Mono',monospace;font-size:11px;text-align:right;color:${consCol};font-weight:${consomme!==null?'600':'400'}">${consomme!==null?consomme.toFixed(1)+' T consommé':fin!==''?fin.toFixed(1)+' T':'—'}</td>
