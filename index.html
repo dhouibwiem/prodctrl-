@@ -508,6 +508,7 @@ window.dispatchEvent(new Event('fbReady'));
     <button id="btnLots" class="btn-hd btn-hist-lots" onclick="openLotHistory()" style="background:rgba(160,120,245,.1);border-color:rgba(160,120,245,.3);color:#a078f5">⚗ Corrections</button>
     <button id="btnStatistiques" class="btn-hd" onclick="openConsommation()" style="background:rgba(245,200,66,.1);border-color:rgba(245,200,66,.3);color:var(--citron)">📊 Stats</button>
     <button id="btnActivite" class="btn-hd btn-hist" onclick="openActivityLog()" style="background:rgba(90,180,245,.1);border-color:rgba(90,180,245,.3);color:#5ab4f5">📜 Activité</button>
+    <button id="btnPreparations" class="btn-hd btn-hist" onclick="openPreparations()" style="background:rgba(111,207,90,.1);border-color:rgba(111,207,90,.3);color:var(--pomme)">🧮 Préparations</button>
     <button class="btn-hd btn-close-day" onclick="closeDay()">✔ Clôturer</button>
     <button id="btnNouvelleJ" class="btn-hd btn-new-day" onclick="newDay()">🌅 Nouvelle J.</button>
     <button id="btnReinit" class="btn-hd btn-reset" onclick="resetDay()">↺ Réinit.</button>
@@ -640,6 +641,23 @@ window.dispatchEvent(new Event('fbReady'));
       <button class="act-filter-btn" data-type="correction" onclick="setActFilter('correction')" style="border-color:rgba(245,165,66,.3);color:#f5a942">⚗ Corrections</button>
     </div>
     <div class="act-list" id="actList"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="prepModal" onclick="if(event.target===this)closePreparations()">
+  <div class="modal" style="max-width:680px">
+    <div class="modal-header">
+      <div class="modal-title">🧮 NOMBRE DE PRÉPARATIONS — ATELIER <span id="prepModalAtelierTag">A</span></div>
+      <button class="modal-close" onclick="closePreparations()">✕</button>
+    </div>
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border2);display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <label style="font-family:'DM Mono',monospace;font-size:10px;color:var(--dim);letter-spacing:.5px">📅 Date à analyser</label>
+      <input id="prepDateInput" type="date" onchange="renderPreparations()"
+        style="background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:7px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;outline:none;color-scheme:dark">
+      <button onclick="document.getElementById('prepDateInput').value=todayISO();renderPreparations()"
+        style="padding:7px 12px;border-radius:6px;border:1px solid var(--border2);background:var(--surface2);color:var(--dim);font-family:'DM Mono',monospace;font-size:11px;cursor:pointer;white-space:nowrap">↻ Aujourd'hui</button>
+    </div>
+    <div class="modal-body" id="prepBody"></div>
   </div>
 </div>
 
@@ -1072,6 +1090,7 @@ function applyModeButtons(){
     btnLots          : isResp || isViewer || isOwner,
     btnStatistiques  : isResp || isViewer,
     btnActivite      : isResp,
+    btnPreparations  : isResp || isViewer,
     // Réinit. uniquement Responsable — Nouvelle J. accessible Owner ET Responsable
     btnReinit        : isResp,
     btnNouvelleJ     : isOwner || isResp,
@@ -1379,6 +1398,7 @@ const PRODUCTS_B = {
 
 let history = [];
 let activityLog = [];
+let preparationsLog = []; // { id, pk, malId, lot, startTs, cap } — 1 entrée par N° de lot, à la date de DÉBUT de la préparation
 let correctionsData = {}; // { pk: { malId: [ {id, type, qty, unit, note, user, time, date, lot, step} ] } }
 let stockStartOfDay = {};   // { pk: { stockId: qty } } snapshot début journée
 let transfersOfDay  = {};   // { pk: { stockId: qty } } cumul transferts du jour
@@ -1433,6 +1453,28 @@ function saveActivityLog(){
   // Sauvegarder jusqu'à 10000 entrées — pas de slice pour garder tout l'historique
   const clean = JSON.parse(JSON.stringify(activityLog.slice(0,10000)));
   window._fbSet(FB_PATH+'/activityLog', clean).catch(e=>console.warn('FB act err',e));
+}
+
+// ===== JOURNAL DES PRÉPARATIONS (1 entrée = 1 N° de lot, à sa date de DÉBUT) =====
+function pushPreparation(pk, malId, lot){
+  const capMap = getMalaxeurCapacityMap();
+  const entry = {
+    id: Date.now()+Math.random(),
+    pk, malId,
+    lot: (lot||'').trim(),
+    startTs: Date.now(),
+    cap: capMap[malId] || 0
+  };
+  preparationsLog.unshift(entry);
+  if(preparationsLog.length > 5000) preparationsLog.pop();
+  savePreparationsLog();
+  if(document.getElementById('prepModal')?.classList.contains('open')) renderPreparations();
+}
+
+function savePreparationsLog(){
+  if(!window._fbReady) return;
+  const clean = JSON.parse(JSON.stringify(preparationsLog.slice(0,5000)));
+  window._fbSet(FB_PATH+'/preparationsLog', clean).catch(e=>console.warn('FB prep err',e));
 }
 
 function saveCorrections(){
@@ -1809,6 +1851,13 @@ function startFirebaseSync(){
   window._fbOnValue(FB_PATH+'/activityLog', (remote) => {
     if(remote && Array.isArray(remote)) activityLog = remote;
     else if(remote && typeof remote==='object') activityLog = Object.values(remote).reverse();
+  });
+
+  window._fbOnValue(FB_PATH+'/preparationsLog', (remote) => {
+    if(remote && Array.isArray(remote)) preparationsLog = remote;
+    else if(remote && typeof remote==='object') preparationsLog = Object.values(remote);
+    else preparationsLog = []; // aucune donnée pour cet atelier → repartir propre (évite toute contamination inter-atelier)
+    if(document.getElementById('prepModal')?.classList.contains('open')) renderPreparations();
   });
 
   window._fbOnValue(FB_PATH+'/history', (remote) => {
@@ -2557,6 +2606,24 @@ function confirmNextStep(btn, pk, malId){
 function nextStep(pk,malId){
   pushUndo();
   const ms=state[pk].malaxeurs[malId];
+
+  // FIX : lever automatiquement une pause restée active quand l'opérateur reprend
+  // le travail via "Étape suivante" (sans être passé par "▶ Reprendre").
+  // Sans ce correctif, le malaxeur restait affiché "en pause" avec l'ancienne
+  // cause (état de sa dernière utilisation), et son chrono d'étape ne redémarrait
+  // jamais, faussant l'enregistrement de l'activité du jour.
+  if(ms.paused){
+    const pauseDur = ms.pauseStart ? Math.floor((Date.now()-ms.pauseStart)/1000) : 0;
+    pushActivity('pause', malId, `${malId} — Reprise automatique`, `Reprise via "Étape suivante" · Durée pause: ${fmt(pauseDur)} · Cause: ${ms.pauseReason||'—'}`);
+    ms.paused = false;
+    ms.pauseStart = null;
+    ms.totalPauseSecs = 0;
+    const newStart = Date.now();
+    ms.stepStart = newStart;
+    if(timers[malId]) timers[malId].stepStart = newStart;
+    startTick();
+  }
+
   const steps=getSteps(pk);
   const vsIdx=versStockIdx(pk);
 
@@ -2613,7 +2680,10 @@ function nextStep(pk,malId){
   advanceTimer(malId,prev,ms.step,pk);
 
   // Mémoriser le début du cycle au 1er démarrage
-  if(prev===-1) ms.cycleStart = Date.now();
+  if(prev===-1){
+    ms.cycleStart = Date.now();
+    pushPreparation(pk, malId, ms.lot);
+  }
 
 
 
@@ -2661,9 +2731,14 @@ function nextStep(pk,malId){
 function setCM6State(pk,malId,newState){
   pushUndo();
   const ms=state[pk].malaxeurs[malId];
+  const prevSimple = ms.simpleState;
   ms.simpleState=newState;
   if(newState==='vide'){ ms.qty=0; ms.targetStocks=[]; }
   if(newState==='valide') ms.qty=17;
+  // Début d'une nouvelle préparation (pour la fonctionnalité "Nombre de préparations")
+  if(newState==='valide' && prevSimple==='vide'){
+    pushPreparation(pk, malId, ms.lot);
+  }
   saveState(); renderAll();
 }
 
@@ -3091,8 +3166,10 @@ function clearHistory(){
   if(!confirm('Effacer TOUT l\'historique ?\nCette action est irréversible.')) return;
   history = [];
   activityLog = [];
+  preparationsLog = [];
   saveHistory();
   saveActivityLog();
+  savePreparationsLog();
   // Reset aussi les données de consommation
   for(const [pk,prod] of Object.entries(PRODUCTS)){
     transfersOfDay[pk]  = {};
@@ -3649,6 +3726,250 @@ function renderConsommation(){
     </div></div>`;
   }
   el.innerHTML = html;
+}
+
+// ===== NOMBRE DE PRÉPARATIONS (par date) =====
+// Chaque N° de lot = 1 préparation, comptabilisée à sa date de DÉBUT de cycle
+// (et non sa date de fin). S'appuie sur preparationsLog, alimenté automatiquement
+// dès qu'un malaxeur démarre un nouveau cycle (aucune saisie manuelle requise).
+function todayISO(){
+  const d = new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+
+function _isoDateFromTs(ts){
+  const t = Math.floor(ts);
+  if(!t || isNaN(t)) return null;
+  const d = new Date(t);
+  if(isNaN(d.getTime())) return null;
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+
+function getMalaxeurCapacityMap(){
+  const cap = {};
+  for(const prod of Object.values(PRODUCTS)){
+    for(const m of prod.malaxeurs) cap[m.id] = m.max;
+  }
+  return cap;
+}
+
+function _malIdToPkMap(){
+  const map = {};
+  for(const [pk,prod] of Object.entries(PRODUCTS)){
+    for(const m of prod.malaxeurs) map[m.id] = pk;
+  }
+  return map;
+}
+
+// ===== RÉCUPÉRATION DES PRÉPARATIONS DÉJÀ EXISTANTES =====
+// Reconstruit dans preparationsLog les préparations lancées AVANT l'ajout de cette
+// fonctionnalité, à partir des données déjà présentes dans l'application :
+//  1) les cycles actuellement en cours (N° de lot + date de début déjà enregistrés
+//     dans l'état du malaxeur : ms.lot + ms.cycleStart) ;
+//  2) les cycles déjà terminés, retrouvés dans le journal d'activité existant
+//     (1er passage à "Remplissage d'eau" avec un N° de lot dans le détail).
+// N'ajoute que ce qui manque (déduplication par malaxeur + N° de lot) et ne
+// modifie ni ne supprime aucune donnée existante — purement additif.
+// Les deux passes utilisent exclusivement la correspondance Atelier → Malaxeurs
+// définie dans PRODUCTS (atelier actuellement actif) : un malaxeur ne peut donc
+// jamais être rattaché au mauvais atelier ou au mauvais produit.
+function backfillPreparationsFromExistingData(){
+  const capMap = getMalaxeurCapacityMap();
+  const malToPk = _malIdToPkMap();
+  const existing = new Set(preparationsLog.map(e => e.malId+'|'+(e.lot||e.id)));
+  let added = false;
+
+  // 1) Cycles en cours actuellement (données déjà présentes dans l'état de l'atelier)
+  for(const [pk,prod] of Object.entries(PRODUCTS)){
+    for(const m of prod.malaxeurs){
+      if(m.simple) continue; // CM6 : aucune date de début fiable disponible dans les données existantes
+      const ms = state[pk]?.malaxeurs?.[m.id];
+      if(!ms) continue;
+      const lot = (ms.lot||'').trim();
+      if(!lot) continue;                          // règle : il faut un N° de lot enregistré
+      if(ms.step===undefined || ms.step<0) continue; // pas de cycle en cours
+      if(!ms.cycleStart) continue;                 // règle : il faut une date de début enregistrée
+      const key = m.id+'|'+lot;
+      if(existing.has(key)) continue;
+      preparationsLog.unshift({
+        id: Date.now()+Math.random(), pk, malId: m.id, lot,
+        startTs: ms.cycleStart, cap: capMap[m.id]||0, backfilled: true
+      });
+      existing.add(key); added = true;
+    }
+  }
+
+  // 2) Cycles déjà terminés avant l'ajout de la fonctionnalité, retrouvés dans le journal d'activité existant
+  for(const entry of activityLog){
+    if(!entry || entry.type !== 'step' || !entry.malId) continue;
+    if(!/→ Remplissage d'eau$/.test(entry.what||'')) continue;
+    const lotMatch = /Lot #(\S+)/.exec(entry.detail||'');
+    if(!lotMatch) continue;
+    const lot = lotMatch[1];
+    const malId = entry.malId;
+    const pk = malToPk[malId]; // undefined si ce malaxeur n'appartient pas à l'atelier actif → ignoré
+    if(!pk) continue;
+    const key = malId+'|'+lot;
+    if(existing.has(key)) continue;
+    const ts = Math.floor(entry.id);
+    if(!ts || isNaN(ts)) continue;
+    preparationsLog.unshift({
+      id: Date.now()+Math.random(), pk, malId, lot,
+      startTs: ts, cap: capMap[malId]||0, backfilled: true
+    });
+    existing.add(key); added = true;
+  }
+
+  if(added) savePreparationsLog();
+}
+
+// Regroupe les préparations d'une date par PRODUIT (pk), en filtrant strictement
+// sur la correspondance Atelier → Malaxeurs de l'atelier actuellement actif
+// (PRODUCTS). Un malaxeur qui n'appartient pas à l'atelier/produit courant
+// (ex : donnée résiduelle d'un autre atelier) est ignoré, jamais affiché ailleurs.
+function getPreparationsForDate(dateStr){
+  // Table de correspondance stricte malaxeur → {pk, cap} pour l'ATELIER ACTIF UNIQUEMENT
+  const malInfo = {};
+  const groupsInit = {};
+  for(const [pk,prod] of Object.entries(PRODUCTS)){
+    groupsInit[pk] = { name: prod.name, byMal: {} };
+    for(const m of prod.malaxeurs) malInfo[m.id] = { pk, cap: m.max };
+  }
+
+  const seen = new Set();
+  for(const entry of preparationsLog){
+    if(!entry || !entry.malId) continue;
+    const info = malInfo[entry.malId];
+    if(!info) continue; // malaxeur hors de l'atelier actif → exclu (filtrage strict)
+    if(_isoDateFromTs(entry.startTs) !== dateStr) continue;
+    const dedupKey = info.pk+'|'+entry.malId+'|'+(entry.lot||entry.id);
+    if(seen.has(dedupKey)) continue;
+    seen.add(dedupKey);
+    const grp = groupsInit[info.pk];
+    if(!grp.byMal[entry.malId]) grp.byMal[entry.malId] = { count: 0, cap: info.cap, lots: [] };
+    grp.byMal[entry.malId].count++;
+    grp.byMal[entry.malId].lots.push(entry.lot || '—');
+  }
+
+  let grandTotal = 0, grandTotalQty = 0;
+  const groups = Object.entries(groupsInit).map(([pk,grp])=>{
+    let total = 0, totalQty = 0;
+    const rows = Object.keys(grp.byMal).sort().map(malId=>{
+      const { count, cap, lots } = grp.byMal[malId];
+      const qty = cap * count;
+      total += count; totalQty += qty;
+      return { malId, count, cap, qty, lots };
+    });
+    grandTotal += total; grandTotalQty += totalQty;
+    return { pk, name: grp.name, rows, total, totalQty };
+  });
+
+  return { groups, grandTotal, grandTotalQty };
+}
+
+function openPreparations(){
+  backfillPreparationsFromExistingData();
+  const tag = document.getElementById('prepModalAtelierTag');
+  if(tag) tag.textContent = currentAtelier;
+  const inp = document.getElementById('prepDateInput');
+  if(inp && !inp.value) inp.value = todayISO();
+  renderPreparations();
+  document.getElementById('prepModal').classList.add('open');
+}
+function closePreparations(){ document.getElementById('prepModal').classList.remove('open'); }
+
+function _prepGroupColor(pk){
+  return pk==='pomme' ? 'var(--pomme)' : pk==='citron' ? 'var(--citron)' : 'var(--finesse)';
+}
+
+function _renderPrepGroupTable(grp){
+  if(grp.rows.length === 0){
+    return `<div style="text-align:center;padding:18px 10px;color:var(--muted);font-family:'DM Mono',monospace;font-size:11.5px">
+      Aucune préparation enregistrée pour cette date.
+    </div>`;
+  }
+  let html = `<table style="width:100%;border-collapse:collapse;font-family:'DM Mono',monospace;font-size:12px">
+    <thead>
+      <tr style="text-align:left;color:var(--muted);border-bottom:1px solid var(--border2)">
+        <th style="padding:7px 8px;font-weight:500">Malaxeur</th>
+        <th style="padding:7px 8px;font-weight:500;text-align:right">Préparations</th>
+        <th style="padding:7px 8px;font-weight:500;text-align:right">Capacité</th>
+        <th style="padding:7px 8px;font-weight:500;text-align:right">Quantité préparée</th>
+        <th style="padding:7px 8px;font-weight:500;text-align:left">N° de lot</th>
+      </tr>
+    </thead>
+    <tbody>`;
+  for(const r of grp.rows){
+    html += `<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:7px 8px;color:var(--text)">${r.malId}</td>
+      <td style="padding:7px 8px;text-align:right;color:var(--text)">${r.count}</td>
+      <td style="padding:7px 8px;text-align:right;color:var(--dim)">${r.cap} T</td>
+      <td style="padding:7px 8px;text-align:right;color:var(--ok)">${r.qty.toFixed(1)} T</td>
+      <td style="padding:7px 8px;text-align:left;color:var(--dim);font-size:10.5px">${r.lots.join(', ')}</td>
+    </tr>`;
+  }
+  html += `<tr>
+      <td style="padding:9px 8px;font-weight:700">Total</td>
+      <td style="padding:9px 8px;text-align:right;font-weight:700">${grp.total}</td>
+      <td style="padding:9px 8px"></td>
+      <td style="padding:9px 8px;text-align:right;font-weight:700;color:var(--ok)">${grp.totalQty.toFixed(1)} T</td>
+      <td style="padding:9px 8px"></td>
+    </tr>`;
+  html += `</tbody></table>`;
+  return html;
+}
+
+function renderPreparations(){
+  const inp = document.getElementById('prepDateInput');
+  const dateStr = inp?.value || todayISO();
+  const [y,mo,da] = dateStr.split('-');
+  const dispDate = `${da}/${mo}/${y}`;
+  const { groups, grandTotal, grandTotalQty } = getPreparationsForDate(dateStr);
+  const multiProduct = groups.length > 1; // ex : Atelier A (Pomme / Citron / Finesse)
+
+  let html = `
+    <div style="margin-bottom:16px">
+      <div class="hist-date">📅 DATE : ${dispDate} — ATELIER ${currentAtelier}</div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:10px">
+        <div style="background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:12px 18px;flex:1;min-width:180px">
+          <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--muted);letter-spacing:1px;margin-bottom:5px">NOMBRE TOTAL DE PRÉPARATIONS${multiProduct?' (ATELIER)':''}</div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:1px;color:var(--finesse)">${grandTotal}</div>
+        </div>
+        <div style="background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:12px 18px;flex:1;min-width:180px">
+          <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--muted);letter-spacing:1px;margin-bottom:5px">QUANTITÉ TOTALE PRÉPARÉE${multiProduct?' (ATELIER)':''}</div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:1px;color:var(--ok)">${grandTotalQty.toFixed(1)} T</div>
+        </div>
+      </div>
+    </div>`;
+
+  if(!multiProduct){
+    // Un seul produit dans cet atelier (ex : Atelier B) → affichage simple, comme avant
+    html += `<div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--muted);letter-spacing:1.5px;margin-bottom:8px">DÉTAIL PAR MALAXEUR</div>`;
+    html += _renderPrepGroupTable(groups[0] || {rows:[],total:0,totalQty:0});
+  } else {
+    // Plusieurs produits dans cet atelier (Atelier A) → un bloc distinct par produit
+    for(const grp of groups){
+      const col = _prepGroupColor(grp.pk);
+      html += `<div style="margin-bottom:18px;border:1px solid var(--border2);border-radius:8px;overflow:hidden">
+        <div style="padding:10px 14px;background:linear-gradient(90deg, ${col}22, transparent);border-left:3px solid ${col};display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:1.5px;color:${col}">${grp.name}</div>
+          <div style="font-family:'DM Mono',monospace;font-size:10.5px;color:var(--dim)">
+            ${grp.total} préparation${grp.total>1?'s':''} · <span style="color:var(--ok)">${grp.totalQty.toFixed(1)} T</span>
+          </div>
+        </div>
+        <div style="padding:10px 14px">${_renderPrepGroupTable(grp)}</div>
+      </div>`;
+    }
+  }
+
+  html += `<div style="margin-top:14px;font-family:'DM Mono',monospace;font-size:9px;color:var(--muted);line-height:1.6">
+    ℹ️ Chaque N° de lot correspond à 1 préparation, comptabilisée à sa date de <strong>début</strong> de cycle
+    (pas sa date de fin). Une préparation démarrée le ${dispDate} et terminée un autre jour reste rattachée au ${dispDate}.
+    Seuls les malaxeurs appartenant à l'Atelier ${currentAtelier} sont affichés${multiProduct?', regroupés par produit':''}.
+  </div>`;
+
+  const el = document.getElementById('prepBody');
+  if(el) el.innerHTML = html;
 }
 
 // ===== ACTIVITY LOG UI =====
